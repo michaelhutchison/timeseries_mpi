@@ -96,7 +96,7 @@ void Slice::record_frame() {
     
     // process with rank 0 writes the frame header
     if (rank == 0) {
-        std::cout << "I got " << nTotalObjects << " total objects. I have " << objects.size() << std::endl;
+        //std::cout << "I got " << nTotalObjects << " total objects. I have " << objects.size() << std::endl;
         unsigned short objectLength = Object_mpi::objectLengthInBytes;
         unsigned long frameSizeInBytes = nTotalObjects * objectLength;
         MPI_Status status;
