@@ -9,14 +9,34 @@ Scene::Scene() : model(1000) {
     backgroundColor[1] = 1.0;
     backgroundColor[2] = 1.0;
     backgroundColor[3] = 1.0;
+
+    // initialize colors
+    colors[ 0].set(1.0, 0.0, 0.0);
+    colors[ 1].set(0.0, 1.0, 0.0);
+    colors[ 2].set(0.0, 0.0, 1.0);
+    colors[ 3].set(1.0, 1.0, 0.0);
+    colors[ 4].set(1.0, 0.0, 1.0);
+    colors[ 5].set(0.0, 1.0, 1.0);
+    colors[ 6].set(1.0, 0.5, 0.0);
+    colors[ 7].set(1.0, 0.0, 0.5);
+    colors[ 8].set(0.5, 1.0, 0.0);
+    colors[ 9].set(0.0, 1.0, 0.5);
+    colors[10].set(0.5, 0.0, 1.0);
+    colors[11].set(0.0, 0.5, 1.0);
+    colors[12].set(1.0, 1.0, 0.5);
+    colors[13].set(1.0, 0.5, 1.0);
+    colors[14].set(0.5, 1.0, 1.0);
+    colors[15].set(1.0, 0.1, 0.3);
 }
 Scene::~Scene() {
 
 }
-void Scene::initialize() {
+void Scene::initialize(char * file) {
+    strncpy(filename, file, 90);
     loadTextures();
-    reader.read("timeseries.rcd");
+    reader.read(filename);
     model.init();
+
 }
 void Scene::loadTextures() {
     textures.loadTexture("textures/metal2.bmp","metal");
@@ -62,10 +82,16 @@ void Scene::display() {
         for (unsigned long i=0; i<nObjects; i++) {
             Object * o = frame->get_object(i);
             if (o != 0) {
+                // Set color based on id
+                int origin = o->getID() >> 28;
+ 	            glColor3f(colors[origin].x, colors[origin].y, colors[origin].z);
+
+
                 // Draw an object from the animation record file
-                Cube(o->x(), o->y(), o->z(),
-                           0.4,0.4,0.4,
-                           o->a_r(),o->x_r(),o->y_r(),o->z_r());
+                //Cube(o->x(), o->y(), o->z(),
+                //           0.4,0.4,0.4,
+                //           o->a_r(),o->x_r(),o->y_r(),o->z_r());
+                Sphere(o->x(), o->y(), o->z(), 0.2);
             }
         }
     }
@@ -148,4 +174,30 @@ void Scene::Cube (double x,double y,double z,
 	glEnd();
 	glPopMatrix();
 }
+void Scene::Sphere(double x, double y, double z, double radius) {
+	double inc=30;
+	glPushMatrix();
+	glTranslated(x,y,z);
+	glScaled(radius,radius,radius);
+   	// Begin drawing
+	glBegin(GL_QUAD_STRIP);	
+	for (double i=0;i<=180;i+=inc)
+	{
+		for (double j=0;j<=360;j+=inc)
+		{
+   			glNormal3f( Cos(j+0  )*Sin(i+0  ), Cos(i+0  ), Sin(j+0  )*Sin(i+0  ));
+			glTexCoord2f( (j+0  )/360,(i+0  )/180);
+			glVertex3f( Cos(j+0  )*Sin(i+0  ), Cos(i+0  ), Sin(j+0  )*Sin(i+0  ));
+			glNormal3f( Cos(j+0  )*Sin(i+inc), Cos(i+inc), Sin(j+0  )*Sin(i+inc));
+			glTexCoord2f( (j+0  )/360,(i+inc)/180);
+			glVertex3f( Cos(j+0  )*Sin(i+inc), Cos(i+inc), Sin(j+0  )*Sin(i+inc));
+		}
+	}
+	glEnd();
+	// Finished drawing	
+    glUseProgram(0);
+	glPopMatrix();
+   	glDisable(GL_TEXTURE_2D);
+}
+
 

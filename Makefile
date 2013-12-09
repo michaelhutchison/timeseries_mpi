@@ -1,5 +1,7 @@
 # Name of the animation file which will be produced and played back
 DATA=mpi_record.rcd
+# Object files required for the playback executable
+PLAYEROBJ=graphicslib.o View.o Light.o Scene.o Mouse.o Texture.o vec3.o Model.o 
 #  Libraries - Linux
 LIBS=-lglut -lGLU -lGL
 # Compilers
@@ -18,6 +20,7 @@ record: recorder_mpi.cpp Slice.h Slice.cpp Object_mpi.h Object_mpi.cpp vec3.h ve
 
 # make and run the MPI Player
 play: player
+	./player $(DATA)
 
 #  Generic compile rules
 .cpp.o:
@@ -32,6 +35,6 @@ clean:
 	rm -f $(EX) $(DATA) *.o *.a
 
 #  Create archive (include glWindowPos here if you need it)
-graphicslib.a: $(OBJ) 
+graphicslib.a: $(PLAYEROBJ) 
 	ar -rcs graphicslib.a $^
 
