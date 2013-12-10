@@ -40,8 +40,10 @@ class Slice {
 public:
     Slice(int r, int s, MPI_File * fh);
     ~Slice();
+    void setTotalObjects(unsigned n) {nTotalObjects = n;}
     /* File IO */
     void record_frame();
+    void write_frame_header();
     /* World controls */
     void createObjects(int n) {for (int i=0; i<n; i++) createObject();}
     void createObject();
@@ -52,6 +54,7 @@ public:
 private:
     int rank;
     int nSlices;
+    unsigned nTotalObjects; // count of all objects in the world
     MPI_File * fileHandle;
     Bounds bounds;
     Neighbors neighbors;

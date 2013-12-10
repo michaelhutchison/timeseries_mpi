@@ -44,6 +44,7 @@ Slice::Slice(int r, int s, MPI_File * fh) {
     maxID = ((rank+1) << 28)-1;
     nextObjectID = minID;
     nextFrameID = 0;
+    nTotalObjects = 0;
 
 }
 Slice::~Slice() {
@@ -51,6 +52,79 @@ Slice::~Slice() {
     for (int i=0; i<objects.size(); i++) 
         delete objects[i];
 }
+void Slice::write_frame_header() {
+    //std::cout << "I got " << nTotalObjects << " total objects. I have " << objects.size() << std::endl;
+    unsigned short objectLength = Object_mpi::objectLengthInBytes;
+    unsigned long frameSizeInBytes = nTotalObjects * objectLength;
+    MPI_Status status;
+    MPI_File_seek(*fileHandle,
+                     0,
+                     MPI_SEEK_END);
+
+    MPI_File_write(*fileHandle,
+                   &frameSizeInBytes,
+                   1,
+                   MPI_UNSIGNED_LONG,
+                   &status);
+    MPI_File_write(*fileHandle,
+                   &nextFrameID,
+                   1,
+                   MPI_UNSIGNED,
+                   &status);
+    MPI_File_write(*fileHandle,
+                   &nTotalObjects,
+                   1,
+                   MPI_UNSIGNED,
+                   &status);
+    MPI_File_write(*fileHandle,
+                   &objectLength,
+                   1,
+                   MPI_UNSIGNED_SHORT,
+                   &status);
+
+    nextFrameID++;
+
+}
+void Slice::record_frame() {
+    // Save the current frame to the animation record
+
+    // Collect the number of objects. 
+    // This block is commented out because the number of objects is static.
+    /*
+    unsigned nLocalObjects = objects.size();
+    MPI_Reduce( &nLocalObjects,
+                &nTotalObjects,
+                1,
+                MPI_UNSIGNED,
+                MPI_SUM,
+                0,
+                MPI_COMM_WORLD);
+    */
+    // process with rank 0 writes the frame header
+    if (rank == 0) {
+        write_frame_header();
+    }
+    // Let all processes catch up
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_File_seek_shared(*fileHandle, 0, MPI_SEEK_END);
+    
+    // Create buffer containing all object states
+    unsigned totalBytes = objects.size() * Object_mpi::objectLengthInBytes;
+    char * objectBuffer = new char[totalBytes];
+    memset(objectBuffer, 0, sizeof(objectBuffer));
+    for (int i=0; i<objects.size(); i++) {
+        objects[i]->get_bytes(&objectBuffer[i*60]);
+    }
+    // Write the buffer
+    MPI_Status status;
+    MPI_File_write_ordered(*fileHandle,
+                        objectBuffer,
+                        totalBytes,
+                        MPI_BYTE,
+                        &status);
+}
+
+
 void Slice::createObject() {
     // Do nothing if this slice has used its ID range
     if (nextObjectID > maxID) return;
@@ -73,80 +147,6 @@ void Slice::createObject() {
                     RANDOMDOUBLE(-vMax, vMax),
                     RANDOMDOUBLE(-vMax, vMax) );
 
-    if (nextObjectID == 1) {
-        std::cout << "Object id: " << o->getID() << std::endl;
-        std::cout << "object position: " << o->x() << "  " << o->y() << "  " << o->z() << std::endl;
-    }
-}
-
-void Slice::record_frame() {
-    // Save the current frame to the animation record
-    //timeseries.record_frame(objects);
-
-    // Collect the number of objects. 
-    unsigned nTotalObjects = 800;
-    /*unsigned nLocalObjects = objects.size();
-    MPI_Reduce( &nLocalObjects,
-                &nTotalObjects,
-                1,
-                MPI_UNSIGNED,
-                MPI_SUM,
-                0,
-                MPI_COMM_WORLD);
-    */
-    // process with rank 0 writes the frame header
-    if (rank == 0) {
-        //std::cout << "I got " << nTotalObjects << " total objects. I have " << objects.size() << std::endl;
-        unsigned short objectLength = Object_mpi::objectLengthInBytes;
-        unsigned long frameSizeInBytes = nTotalObjects * objectLength;
-        MPI_Status status;
-        MPI_File_seek(*fileHandle,
-                         0,
-                         MPI_SEEK_END);
- 
-        MPI_File_write(*fileHandle,
-                       &frameSizeInBytes,
-                       1,
-                       MPI_UNSIGNED_LONG,
-                       &status);
-        MPI_File_write(*fileHandle,
-                       &nextFrameID,
-                       1,
-                       MPI_UNSIGNED,
-                       &status);
-        MPI_File_write(*fileHandle,
-                       &nTotalObjects,
-                       1,
-                       MPI_UNSIGNED,
-                       &status);
-        MPI_File_write(*fileHandle,
-                       &objectLength,
-                       1,
-                       MPI_UNSIGNED_SHORT,
-                       &status);
-
-        nextFrameID++;
-    }
-    // Let all processes catch up
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_File_seek_shared(*fileHandle,
-                         0,
-                         MPI_SEEK_END);
-    
-    // Create buffer containing all object states
-    unsigned totalBytes = objects.size() * Object_mpi::objectLengthInBytes;
-    char * objectBuffer = new char[totalBytes];
-    memset(objectBuffer, 0, sizeof(objectBuffer));
-    for (int i=0; i<objects.size(); i++) {
-        objects[i]->get_bytes(&objectBuffer[i*60]);
-    }
-    // Write the buffer
-    MPI_Status status;
-    MPI_File_write_ordered(*fileHandle,
-                        objectBuffer,
-                        totalBytes,
-                        MPI_BYTE,
-                        &status);
 }
 
 void Slice::advance_full_step() {

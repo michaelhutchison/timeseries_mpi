@@ -36,9 +36,9 @@ int main(int argc, char * argv[]) {
 
     // Create a slice
     Slice slice(rank, size, &fh); 
-    
     // Add objects to the slice
     slice.createObjects(OBJECTSPERSLICE);
+    slice.setTotalObjects(size * OBJECTSPERSLICE); 
 
     // Write the file header
     if (rank == 0) {
