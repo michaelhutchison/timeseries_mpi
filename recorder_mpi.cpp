@@ -61,7 +61,13 @@ int main(int argc, char * argv[]) {
 
 
     /* Parallel FFD Algorithm */
-    if (rank == 0) cout << "Producing animation data" << endl;
+    double startTime, endTime;
+    if (rank == 0) {
+        cout << "Producing animation data" << endl;
+        cout << "Generating " << FRAMES << endl;
+        cout << size * OBJECTSPERSLICE << " objects" << endl;
+        startTime = MPI_Wtime();   
+    }
     // Initial state
     slice.record_frame();
     for (int i=1; i<FRAMES; i++) {
@@ -83,7 +89,12 @@ int main(int argc, char * argv[]) {
         // Record this slice's part of the new frame
         slice.record_frame();
     }
-    if (rank == 0) cout << "Finished producing timeseries data in " << filename << "." << endl;
+    if (rank == 0) {
+        endTime = MPI_Wtime();
+        double elapsedTime = endTime - startTime;
+        cout << "Finished producing timeseries data in " << filename << "." << endl;
+        cout << "Elapsed time: " << elapsedTime << endl;
+    }
 
     // Close file
     MPI_File_close(&fh);
