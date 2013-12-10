@@ -54,7 +54,7 @@ public:
  
 private:
     unsigned id;
-    int radius;
+    double radius;
     /* State data */
     Vec3 position;
     Vec3 previousPosition;

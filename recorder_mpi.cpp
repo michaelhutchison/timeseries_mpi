@@ -2,7 +2,7 @@
 #include "Slice.h"
 #include "mpi.h"
 
-#define OBJECTSPERSLICE 200
+#define OBJECTSPERSLICE 2000
 #define FRAMES 400
 
 using namespace std;
@@ -74,16 +74,19 @@ int main(int argc, char * argv[]) {
         // -- Not implemented. This is where one would update
         //    a force field, such as a fluid flow, and coordinate
         //    forces at boundaries between processes.
-        
+       
+        // Exchange ghost objects
+        slice.exchange_ghost_objects();
+
         // Advance position and velocity one full step
         // -- Simple explicit Euler steps
         slice.advance_full_step(); 
 
+        // Collision detection
+        slice.detect_collisions();
+
         // MPI Communication step 2: update of remote and notification of new bodies
         slice.exchange_objects();
-
-        // Collision detection
-        slice.handle_collisions();
 
         // Record this slice's part of the new frame
         slice.record_frame();

@@ -23,6 +23,10 @@ Slice::Slice(int r, int s, MPI_File * fh) {
     double sliceWidth = (worldBounds.px - worldBounds.nx)/nSlices;
     bounds.nx = worldBounds.nx + (rank * sliceWidth);
     bounds.px = bounds.nx + sliceWidth;
+    overlapWidth = 0.3;
+    innerBounds = bounds;
+    if (rank > 0) innerBounds.nx += overlapWidth;
+    if (rank < nSlices-1) innerBounds.px -= overlapWidth;
     
     // Initialize neighbors
     // -- value of -1 indicates no neighbor at that boundary
@@ -224,7 +228,7 @@ void Slice::send_objects(std::vector<unsigned> * idBuffer, std::vector<double> *
  *   being transferred from another slice.
  *   Creates and ingests new objects once data has been received.
  */
-void Slice::receive_objects(unsigned sourceRank) {
+void Slice::receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * objList) {
     MPI_Status status;
     int doublesPerObject = 10;
     // Receive number of objects
@@ -258,7 +262,7 @@ void Slice::receive_objects(unsigned sourceRank) {
     // Ingest new objects
     for (int i=0; i<nObjects; i++) {
         Object_mpi * o = new Object_mpi;
-        objects.push_back(o);
+        objList->push_back(o);
         o->setID(idBuffer[i]);
         Vec3 position(stateBuffer[i*doublesPerObject + 0],
                       stateBuffer[i*doublesPerObject + 1],
@@ -274,6 +278,76 @@ void Slice::receive_objects(unsigned sourceRank) {
         o->setVelocity(velocity);
         o->setRotationVector(rotation);
         o->setRotationAngle(angle);
+    }
+}
+void Slice::exchange_ghost_objects() {
+    // Any objects which have crossed a boundary with another slice
+    // are transferred to that slice. 
+    // Any objects which have crossed into this slice are
+    // recieved from their previous slice.
+    // NOTE: Any objects whose anchor points are exactly on a slice's 
+    //       negative-x boundary are owned by that slice. 
+    //       An object on a slice's positive-x boundary are owned 
+    //       by their neighber with rank+1.
+    //
+    // For each object, two buffers are sent:
+    // 1) object ids
+    //   unsigned            object ID 
+    // 2) object states
+    //   double              x position
+    //   double              y position
+    //   double              z position
+    //   double              x velocity
+    //   double              y velocity
+    //   double              z velocity
+    //   double              x of rotation vector
+    //   double              y of rotation vector
+    //   double              z of rotation vector
+    //   double              angle of rotation
+    
+    // Create buffer of objects to transfer
+    std::vector<unsigned> idBuffer;
+    std::vector<double> stateBuffer;
+    int doublesPerObject = 10;
+
+    // Clear the ghost object list
+    ghostObjects.clear();
+
+    // Send to negative-x neighbor
+    if (neighbors.nx != -1) {
+        idBuffer.clear();
+        stateBuffer.clear();
+        // Produce buffer of objects to transfer to nx neighbor
+        for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+            if ((*itr)->x() < innerBounds.nx) {
+                // Copy the object's id and state into transfer buffers
+                store_object_state(&idBuffer, &stateBuffer, (*itr));
+            }
+        }
+        // Transfer the set of objects to the neighbor
+        send_objects(&idBuffer, &stateBuffer, rank-1);
+    }
+    // Receive from positive-x neighbors
+    if (neighbors.px != -1) {
+        receive_objects(rank+1, &ghostObjects);
+    }
+    // Send to positive-x neighbor
+    if (neighbors.px != -1) {
+        idBuffer.clear();
+        stateBuffer.clear();
+        // Produce buffer of objects to transfer to px neighbor
+        for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+            if ((*itr)->x() >= innerBounds.px) {
+                // Copy the object's id and state into transfer buffers
+                store_object_state(&idBuffer, &stateBuffer, (*itr));
+            }
+        }
+        // Transfer the set of objects to the neighbor
+        send_objects(&idBuffer, &stateBuffer, rank+1);
+    }
+    // Receive from negative-x neighbors
+    if (neighbors.nx != -1) {
+        receive_objects(rank-1, &ghostObjects);
     }
 }
 
@@ -328,7 +402,7 @@ void Slice::exchange_objects() {
     }
     // Receive from positive-x neighbors
     if (neighbors.px != -1) {
-        receive_objects(rank+1);
+        receive_objects(rank+1, &objects);
     }
     // Send to positive-x neighbor
     if (neighbors.px != -1) {
@@ -351,13 +425,68 @@ void Slice::exchange_objects() {
     }
     // Receive from negative-x neighbors
     if (neighbors.nx != -1) {
-        receive_objects(rank-1);
+        receive_objects(rank-1, &objects);
     }
  
 
 
 }
-void Slice::handle_collisions() {
+
+void Slice::handle_collision(Object_mpi * obj1, Object_mpi * obj2) {
+
+    // Get position vectors
+    Vec3 obj1Position = obj1->getPosition();
+    Vec3 obj2Position = obj2->getPosition();
+    // Get velocity vectors
+    Vec3 obj1Velocity = obj1->getVelocity();
+    Vec3 obj2Velocity = obj2->getVelocity();
+    // calculate normal center-to-center vector
+    Vec3 sphereNormal = obj2Position - obj1Position;
+    sphereNormal.normalize();
+    // calculate object 1 new velocity 
+    double dotProd = obj1Velocity.dot(sphereNormal);
+    Vec3 obj1NewVelocity = obj1Velocity - 1*dotProd*sphereNormal;
+
+    obj1->setVelocity(obj1NewVelocity);
+    
+}
+void Slice::detect_collisions() {
+    // Handle collisions with ghost objects
+    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+        for (std::vector<Object_mpi *>::iterator ghostItr = ghostObjects.begin(); ghostItr != ghostObjects.end(); ++ghostItr) {
+            // Get distance between centers of spheres
+            double distance = sqrt( pow((*itr)->x()-(*ghostItr)->x(), 2) + 
+                                    pow((*itr)->y()-(*ghostItr)->y(), 2) +
+                                    pow((*itr)->z()-(*ghostItr)->z(), 2) );
+            if (distance < 2*(*itr)->getRadius()) {
+                handle_collision((*itr), (*ghostItr));
+                //std::cout << "BOUNCE" << std::endl;
+            }
+        }    
+    }
+    // Handle collisions with local objects
+    //double minDistance = 20.0;
+    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+        for (std::vector<Object_mpi *>::iterator otherItr = objects.begin(); otherItr != objects.end(); ++otherItr) {
+            if ((*itr)->getID() != (*otherItr)->getID()) {
+                // Get distance between centers of spheres
+                double distance = sqrt( pow((*itr)->x()-(*otherItr)->x(), 2) + 
+                                        pow((*itr)->y()-(*otherItr)->y(), 2) +
+                                        pow((*itr)->z()-(*otherItr)->z(), 2) );
+                //if (distance < minDistance) minDistance = distance;
+                //if (rank == 0) std::cout << "radius: " << (*itr)->getRadius() << std::endl;
+                if (distance < 2*(*itr)->getRadius()) {
+                    handle_collision((*itr), (*otherItr));
+                    //std::cout << "LOCAL BOUNCE" << std::endl;
+                }
+            }
+        }    
+    }
+    //if (rank == 0) std::cout << "min distance: " << minDistance << std::endl;
+    detect_collisions_world_boundaries();
+}
+void Slice::detect_collisions_world_boundaries() {
+    
     // NOTE: only handles collisions with world boundaries.
     for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
         Vec3 dp;

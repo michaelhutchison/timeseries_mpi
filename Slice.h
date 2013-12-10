@@ -49,16 +49,20 @@ public:
     void createObject();
     void advance_full_step();
     void advance_half_step();
+    void exchange_ghost_objects();
     void exchange_objects();
-    void handle_collisions();
+    void detect_collisions();
 private:
     int rank;
     int nSlices;
     unsigned nTotalObjects; // count of all objects in the world
     MPI_File * fileHandle;
+    double overlapWidth;
     Bounds bounds;
+    Bounds innerBounds;
     Neighbors neighbors;
     std::vector<Object_mpi *> objects;
+    std::vector<Object_mpi *> ghostObjects;
     /* boundary cases */
     float roiWidth; // width of region-of-interest
     std::vector<Object_mpi *> nxRoiObjects;
@@ -73,7 +77,10 @@ private:
     /* Private methods */
     void store_object_state(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, Object_mpi * o);
     void send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank);
-    void receive_objects(unsigned sourceRank);
+    void receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * objList);
+
+    void detect_collisions_world_boundaries();
+    void handle_collision(Object_mpi * obj1, Object_mpi * obj2);
 
 
 };
