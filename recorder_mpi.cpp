@@ -64,8 +64,8 @@ int main(int argc, char * argv[]) {
     double startTime, endTime;
     if (rank == 0) {
         cout << "Producing animation data" << endl;
-        cout << "Generating " << FRAMES << endl;
-        cout << size * OBJECTSPERSLICE << " objects" << endl;
+        cout << "Generating " << FRAMES << " frames" << endl;
+        cout << "World contains " << size * OBJECTSPERSLICE << " objects" << endl;
         startTime = MPI_Wtime();   
     }
     // Initial state
@@ -93,7 +93,7 @@ int main(int argc, char * argv[]) {
         endTime = MPI_Wtime();
         double elapsedTime = endTime - startTime;
         cout << "Finished producing timeseries data in " << filename << "." << endl;
-        cout << "Elapsed time: " << elapsedTime << endl;
+        cout << "Elapsed time: " << elapsedTime << " seconds" << endl;
     }
 
     // Close file
