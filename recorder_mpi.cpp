@@ -59,7 +59,6 @@ int main(int argc, char * argv[]) {
                                 &status);
     }
 
-
     /* Parallel FFD Algorithm */
     double startTime, endTime;
     if (rank == 0) {

@@ -84,8 +84,8 @@ void Slice::record_frame() {
     //timeseries.record_frame(objects);
 
     // Collect the number of objects. 
-    unsigned nTotalObjects;
-    unsigned nLocalObjects = objects.size();
+    unsigned nTotalObjects = 800;
+    /*unsigned nLocalObjects = objects.size();
     MPI_Reduce( &nLocalObjects,
                 &nTotalObjects,
                 1,
@@ -93,7 +93,7 @@ void Slice::record_frame() {
                 MPI_SUM,
                 0,
                 MPI_COMM_WORLD);
-    
+    */
     // process with rank 0 writes the frame header
     if (rank == 0) {
         //std::cout << "I got " << nTotalObjects << " total objects. I have " << objects.size() << std::endl;

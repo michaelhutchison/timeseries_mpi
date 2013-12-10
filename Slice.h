@@ -40,9 +40,11 @@ class Slice {
 public:
     Slice(int r, int s, MPI_File * fh);
     ~Slice();
+    /* File IO */
+    void record_frame();
+    /* World controls */
     void createObjects(int n) {for (int i=0; i<n; i++) createObject();}
     void createObject();
-    void record_frame();
     void advance_full_step();
     void advance_half_step();
     void exchange_objects();
