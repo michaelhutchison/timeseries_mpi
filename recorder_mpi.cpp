@@ -1,21 +1,25 @@
 #include <iostream>
+#include <cstdlib>
 #include "Slice.h"
 #include "mpi.h"
-
-#define OBJECTSPERSLICE 2000
-#define FRAMES 400
 
 using namespace std;
 
 int main(int argc, char * argv[]) {
     // Check command line arguments
-    if (argc < 2) {
+    if (argc < 7) {
         cout << "ERROR: Too few command line arguments." << endl;
-        cout << "USAGE: > " << argv[0] << " filename " << endl;
+        cout << "USAGE: > " << argv[0] << " recordfile world-x-width world-y-width world-z-width objectsInWorld numberOfFrames" << endl;
         return 1;
     }
-    // Get filename from command line
+    // Get parameters from command line
     char * filename = argv[1];
+    double worldSize[3];
+    worldSize[0] = atof(argv[2]);
+    worldSize[1] = atof(argv[3]);
+    worldSize[2] = atof(argv[4]);
+    unsigned totalObjects = atoi(argv[5]);
+    unsigned nFrames = atoi(argv[6]);
 
     // Initialize MPI
     int rank, size;
@@ -34,12 +38,13 @@ int main(int argc, char * argv[]) {
                   MPI_INFO_NULL,
                   &fh);
 
-    // Create a slice
-    Slice slice(rank, size, &fh); 
+    // Create and initialize a Slice
+    Slice slice(rank, size, &fh, worldSize); 
     // Add objects to the slice
-    slice.createObjects(OBJECTSPERSLICE);
-    slice.setTotalObjects(size * OBJECTSPERSLICE); 
-
+    unsigned objectsPerSlice = totalObjects / size;
+    slice.createObjects(objectsPerSlice);
+    slice.setTotalObjects(size * objectsPerSlice); 
+    
     // Write the file header
     if (rank == 0) {
         MPI_Status status;
@@ -51,7 +56,6 @@ int main(int argc, char * argv[]) {
                         MPI_SHORT,
                         &status);
         // Write number of frames
-        unsigned nFrames = FRAMES;
         MPI_File_write( fh,
                                 &nFrames,
                                 1,
@@ -62,14 +66,18 @@ int main(int argc, char * argv[]) {
     /* Parallel FFD Algorithm */
     double startTime, endTime;
     if (rank == 0) {
-        cout << "Producing animation data" << endl;
-        cout << "Generating " << FRAMES << " frames" << endl;
-        cout << "World contains " << size * OBJECTSPERSLICE << " objects" << endl;
+        cout << "----------------------------------" << endl;
+        cout << "Producing animation data using mpi" << endl;
+        cout << "  Using " << size << " processors" << endl;
+        cout << "  Generating " << nFrames << " frames" << endl;
+        cout << "  World contains " << size * objectsPerSlice << " objects" << endl;
+        cout << "  World size: " << worldSize[0] << "x" << worldSize[1] << "x" << worldSize[2] << endl; 
+            
         startTime = MPI_Wtime();   
     }
     // Initial state
     slice.record_frame();
-    for (int i=1; i<FRAMES; i++) {
+    for (int i=1; i<nFrames; i++) {
         // MPI Communication step 1: force synchronization
         // -- Not implemented. This is where one would update
         //    a force field, such as a fluid flow, and coordinate
@@ -94,8 +102,8 @@ int main(int argc, char * argv[]) {
     if (rank == 0) {
         endTime = MPI_Wtime();
         double elapsedTime = endTime - startTime;
-        cout << "Finished producing timeseries data in " << filename << "." << endl;
-        cout << "Elapsed time: " << elapsedTime << " seconds" << endl;
+        cout << "Finished producing timeseries data in file: " << filename << "." << endl;
+        cout << "  Elapsed time: " << elapsedTime << " seconds" << endl;
     }
 
     // Close file

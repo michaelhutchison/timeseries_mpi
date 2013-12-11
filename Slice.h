@@ -38,7 +38,7 @@ struct Neighbors {
 
 class Slice {
 public:
-    Slice(int r, int s, MPI_File * fh);
+    Slice(int r, int s, MPI_File * fh, double worldSize[3]);
     ~Slice();
     void setTotalObjects(unsigned n) {nTotalObjects = n;}
     /* File IO */

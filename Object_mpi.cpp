@@ -6,7 +6,7 @@
  *  and handles reading and writing the state to/from the recording.
  ******************************/
 Object_mpi::Object_mpi() {
-    radius = 0.2;
+    radius = 1.0;
     rotationAngle = 0;
 }
 Object_mpi::~Object_mpi() {

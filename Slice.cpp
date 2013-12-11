@@ -1,7 +1,7 @@
 #include "Slice.h"
 
 /* Constructor */
-Slice::Slice(int r, int s, MPI_File * fh) {
+Slice::Slice(int r, int s, MPI_File * fh, double worldSize[3]) {
     rank = r;
     nSlices = s;
     fileHandle = fh;
@@ -9,12 +9,12 @@ Slice::Slice(int r, int s, MPI_File * fh) {
     // initialize world boundaries
     // -- This might be better to initialize outside this class.
     Bounds worldBounds;
-    worldBounds.nx = -6.0;
-    worldBounds.px =  6.0;
-    worldBounds.ny = -6.0;
-    worldBounds.py =  6.0;
-    worldBounds.nz = -6.0;
-    worldBounds.pz =  6.0;
+    worldBounds.nx = -worldSize[0] * 0.5;
+    worldBounds.px =  worldSize[0] * 0.5;
+    worldBounds.ny = -worldSize[1] * 0.5;
+    worldBounds.py =  worldSize[1] * 0.5;
+    worldBounds.nz = -worldSize[2] * 0.5;
+    worldBounds.pz =  worldSize[2] * 0.5;
 
     // initialize slice boundaries 
     // -- Each slice has a portion of the x-range 
@@ -49,7 +49,6 @@ Slice::Slice(int r, int s, MPI_File * fh) {
     nextObjectID = minID;
     nextFrameID = 0;
     nTotalObjects = 0;
-
 }
 Slice::~Slice() {
     // Release dynamically allocated memory
@@ -146,7 +145,7 @@ void Slice::createObject() {
                           RANDOMDOUBLE(-1.0, 1.0) );
     o->setRotationAngle( RANDOMDOUBLE(0, 2*PI));
     o->setRotationVelocity( RANDOMDOUBLE(-5,5));
-    double vMax = 0.1;
+    double vMax = 0.5;
     o->setVelocity( RANDOMDOUBLE(-vMax, vMax),
                     RANDOMDOUBLE(-vMax, vMax),
                     RANDOMDOUBLE(-vMax, vMax) );
@@ -440,15 +439,30 @@ void Slice::handle_collision(Object_mpi * obj1, Object_mpi * obj2) {
     // Get velocity vectors
     Vec3 obj1Velocity = obj1->getVelocity();
     Vec3 obj2Velocity = obj2->getVelocity();
-    // calculate normal center-to-center vector
+    // Save speed magnitude
+    double speed1 = obj1Velocity.length();
+    double speed2 = obj2Velocity.length();
+    // calculate normal center-to-center vector and magnitude of overlap
     Vec3 sphereNormal = obj2Position - obj1Position;
+    double overlap = (obj1->getRadius() + obj2->getRadius()) - sphereNormal.length();
     sphereNormal.normalize();
     // calculate object 1 new velocity 
     double dotProd = obj1Velocity.dot(sphereNormal);
-    Vec3 obj1NewVelocity = obj1Velocity - 1*dotProd*sphereNormal;
-
+    Vec3 obj1NewVelocity = obj1Velocity - 2*dotProd*sphereNormal;
+    // calculate object 2 new velocity 
+    dotProd = obj2Velocity.dot(-1*sphereNormal);
+    Vec3 obj2NewVelocity = obj2Velocity + 2*dotProd*sphereNormal;
+    // Fix speeds
+    obj1NewVelocity *= speed2/obj1NewVelocity.length();
+    obj2NewVelocity *= speed1/obj2NewVelocity.length();
+   
     obj1->setVelocity(obj1NewVelocity);
-    
+    obj2->setVelocity(obj2NewVelocity);
+    // Fix positions so spheres no longer overlap
+    obj1->delta_position(sphereNormal * overlap * -0.55);
+    obj2->delta_position(sphereNormal * overlap * 0.55);
+
+
 }
 void Slice::detect_collisions() {
     // Handle collisions with ghost objects
@@ -467,7 +481,7 @@ void Slice::detect_collisions() {
     // Handle collisions with local objects
     //double minDistance = 20.0;
     for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-        for (std::vector<Object_mpi *>::iterator otherItr = objects.begin(); otherItr != objects.end(); ++otherItr) {
+        for (std::vector<Object_mpi *>::iterator otherItr = itr; otherItr != objects.end(); ++otherItr) {
             if ((*itr)->getID() != (*otherItr)->getID()) {
                 // Get distance between centers of spheres
                 double distance = sqrt( pow((*itr)->x()-(*otherItr)->x(), 2) + 
