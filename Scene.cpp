@@ -66,7 +66,7 @@ void Scene::display() {
                  backgroundColor[2],
                  backgroundColor[3]);
  	glColor3f(1,1,1);
-    if (drawAxesOn) drawAxes(-55,-55,-55);
+    if (drawAxesOn) drawAxes(-(worldX/2)-5, -(worldY/2)-5, -(worldZ/2)-5);
 
     // Draw real time scene
     /*
@@ -120,7 +120,7 @@ void Scene::drawAxes(double x, double y, double z)
 {
     glPushMatrix();
 	glTranslated(x,y,z);
-	double len=5;
+	double len=15;
  	glColor3f(1,1,1);
     glBegin(GL_LINES);
     glVertex3d(0.0,0.0,0.0);

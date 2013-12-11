@@ -143,13 +143,17 @@ void reshape(int width, int height) {
  */
 int main(int argc,char* argv[]) {
     // Check command line arguments
-    if (argc < 2) {
+    if (argc < 5) {
         cout << "ERROR: Too few command line arguments." << endl;
-        cout << "USAGE: > main filename " << endl;
+        cout << "USAGE: > " << argv[0] << " filename worldX worldY worldZ" << endl;
         return 1;
     }
-    // Get filename from command line
+    // Get parameters from command line
     char * filename = argv[1];
+    double worldSize[3];
+    worldSize[0] = atof(argv[2]);
+    worldSize[1] = atof(argv[3]);
+    worldSize[2] = atof(argv[4]);
    	// Initialize GLUT
    	glutInit(&argc,argv);
 	// Request double buffered, true color window with Z buffering at 600x600
@@ -167,6 +171,7 @@ int main(int argc,char* argv[]) {
     glutPassiveMotionFunc(mouseMotion);
     // Initialize the scene
     scene.initialize(filename);
+    scene.setWorldSize(worldSize);
     // Initialize the View
     view.setAzimuth(0);       //  Azimuth of view angle
     view.setElevation(-1);      //  Elevation of view angle
