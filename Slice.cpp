@@ -193,33 +193,35 @@ void Slice::store_object_state(std::vector<unsigned> * idBuffer, std::vector<dou
  *   These objects should already have been removed from the 
  *   list of objects owned by the sending slice.
  */
-void Slice::send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank) {
-    int doublesPerObject = 10;
+void Slice::send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank, MPI_Request * requestList) {
+    unsigned doublesPerObject = 10;
     // Send number of objects
     unsigned nObjects = idBuffer->size();
-    MPI_Send(&nObjects,
+    MPI_Isend(&nObjects,
              1,
              MPI_UNSIGNED,
              targetRank,
-             0,
-             MPI_COMM_WORLD);
-    if (nObjects == 0) return;
+             1,
+             MPI_COMM_WORLD,
+             &requestList[0]);
     // Send object ids
     std::vector<unsigned> &ids = *idBuffer;
-    MPI_Send(&ids[0], 
-             idBuffer->size(),
+    MPI_Isend(&ids[0], 
+             nObjects,
              MPI_UNSIGNED,
              targetRank,
-             0,
-             MPI_COMM_WORLD);
+             2,
+             MPI_COMM_WORLD,
+             &requestList[1]);
     // Send object states
     std::vector<double> &states = *stateBuffer;
-    MPI_Send(&states[0], 
-             idBuffer->size() * doublesPerObject,
+    MPI_Isend(&states[0], 
+             nObjects * doublesPerObject,
              MPI_DOUBLE,
              targetRank,
-             0,
-             MPI_COMM_WORLD);
+             3,
+             MPI_COMM_WORLD,
+             &requestList[2]);
 }
 
 /* receive_objects
@@ -228,36 +230,38 @@ void Slice::send_objects(std::vector<unsigned> * idBuffer, std::vector<double> *
  *   Creates and ingests new objects once data has been received.
  */
 void Slice::receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * objList) {
-    MPI_Status status;
-    int doublesPerObject = 10;
+    unsigned doublesPerObject = 10;
     // Receive number of objects
     unsigned nObjects;
-    MPI_Recv(&nObjects,
+    MPI_Request request;
+    MPI_Irecv(&nObjects,
              1,
              MPI_UNSIGNED,
              sourceRank,
-             0,
+             1,
              MPI_COMM_WORLD,
-             &status);
-    if (nObjects == 0) return;
+             &request);
+    MPI_Wait(&request, MPI_STATUSES_IGNORE);
     // Receive object ids
     unsigned * idBuffer = new unsigned[nObjects];
-    MPI_Recv(idBuffer,
+    MPI_Irecv(idBuffer,
              nObjects,
              MPI_UNSIGNED,
              sourceRank,
-             0,
+             2,
              MPI_COMM_WORLD,
-             &status);
+             &request);
+    MPI_Wait(&request, MPI_STATUSES_IGNORE);
     // Receive object states
     double * stateBuffer = new double[nObjects * doublesPerObject];
-    MPI_Recv(stateBuffer,
+    MPI_Irecv(stateBuffer,
              nObjects * doublesPerObject,
              MPI_DOUBLE,
              sourceRank,
-             0,
+             3,
              MPI_COMM_WORLD,
-             &status);
+             &request);
+    MPI_Wait(&request, MPI_STATUSES_IGNORE);
     // Ingest new objects
     for (int i=0; i<nObjects; i++) {
         Object_mpi * o = new Object_mpi;
@@ -309,6 +313,10 @@ void Slice::exchange_ghost_objects() {
     std::vector<double> stateBuffer;
     int doublesPerObject = 10;
 
+    // Results objects
+    MPI_Request leftSendRequestList[3];
+    MPI_Request rightSendRequestList[3];
+
     // Clear the ghost object list
     ghostObjects.clear();
 
@@ -323,12 +331,8 @@ void Slice::exchange_ghost_objects() {
                 store_object_state(&idBuffer, &stateBuffer, (*itr));
             }
         }
-        // Transfer the set of objects to the neighbor
-        send_objects(&idBuffer, &stateBuffer, rank-1);
-    }
-    // Receive from positive-x neighbors
-    if (neighbors.px != -1) {
-        receive_objects(rank+1, &ghostObjects);
+        // Transfer the set of objects to the left (negative-x) neighbor
+        send_objects(&idBuffer, &stateBuffer, rank-1, leftSendRequestList);
     }
     // Send to positive-x neighbor
     if (neighbors.px != -1) {
@@ -341,13 +345,22 @@ void Slice::exchange_ghost_objects() {
                 store_object_state(&idBuffer, &stateBuffer, (*itr));
             }
         }
-        // Transfer the set of objects to the neighbor
-        send_objects(&idBuffer, &stateBuffer, rank+1);
+        // Transfer the set of objects to the right (positive-x) neighbor
+        send_objects(&idBuffer, &stateBuffer, rank+1, rightSendRequestList);
+        
     }
-    // Receive from negative-x neighbors
+
+   // Receive from negative-x neighbors
     if (neighbors.nx != -1) {
         receive_objects(rank-1, &ghostObjects);
     }
+    // Receive from positive-x neighbors
+    if (neighbors.px != -1) {
+        receive_objects(rank+1, &ghostObjects);
+    }
+    // Wait for communication to be complete
+    if (neighbors.nx != -1) { MPI_Waitall(3, leftSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.px != -1) { MPI_Waitall(3, rightSendRequestList, MPI_STATUSES_IGNORE); }
 }
 
 void Slice::exchange_objects() {
@@ -380,6 +393,10 @@ void Slice::exchange_objects() {
     std::vector<double> stateBuffer;
     int doublesPerObject = 10;
 
+    // Results objects
+    MPI_Request leftSendRequestList[3];
+    MPI_Request rightSendRequestList[3];
+
     // Send to negative-x neighbor
     if (neighbors.nx != -1) {
         idBuffer.clear();
@@ -397,11 +414,7 @@ void Slice::exchange_objects() {
             }
         }
         // Transfer the set of objects to the neighbor
-        send_objects(&idBuffer, &stateBuffer, rank-1);
-    }
-    // Receive from positive-x neighbors
-    if (neighbors.px != -1) {
-        receive_objects(rank+1, &objects);
+        send_objects(&idBuffer, &stateBuffer, rank-1, leftSendRequestList);
     }
     // Send to positive-x neighbor
     if (neighbors.px != -1) {
@@ -420,15 +433,22 @@ void Slice::exchange_objects() {
             }
         }
         // Transfer the set of objects to the neighbor
-        send_objects(&idBuffer, &stateBuffer, rank+1);
+        send_objects(&idBuffer, &stateBuffer, rank+1, rightSendRequestList);
     }
-    // Receive from negative-x neighbors
+
+   // Receive from negative-x neighbors
     if (neighbors.nx != -1) {
         receive_objects(rank-1, &objects);
     }
+     // Receive from positive-x neighbors
+    if (neighbors.px != -1) {
+        receive_objects(rank+1, &objects);
+    }
  
-
-
+    // Wait for communication to be complete
+    if (neighbors.nx != -1) { MPI_Waitall(3, leftSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.px != -1) { MPI_Waitall(3, rightSendRequestList, MPI_STATUSES_IGNORE); }
+ 
 }
 
 void Slice::handle_collision(Object_mpi * obj1, Object_mpi * obj2) {

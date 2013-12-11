@@ -72,7 +72,7 @@ private:
 
     /* Private methods */
     void store_object_state(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, Object_mpi * o);
-    void send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank);
+    void send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank, MPI_Request * requestList);
     void receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * objList);
 
     void detect_collisions_world_boundaries();
