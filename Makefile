@@ -1,5 +1,7 @@
+# All executables
+EXE=player recorder_serial recorder_mpi
 # Name of the animation file which will be produced and played back
-DATA=mpi_record.rcd
+RECORDFILE=mpi_record.rcd
 # Object files required for the playback executable
 PLAYEROBJ=graphicslib.o View.o Light.o Scene.o Mouse.o Texture.o vec3.o Model.o 
 #  Libraries - Linux
@@ -7,20 +9,46 @@ LIBS=-lglut -lGLU -lGL
 # Compilers
 CPP=g++
 MPICC=mpicc
+# Size of the world
+X=100
+Y=100
+Z=100
+# number of processes to use in MPI implementation
+P=4
+# Number of frames to produce
+F=400
+# Number of objects to create in the world
+O=2000
 
-# make and run the MPI recorder
-record: recorder_mpi.cpp Slice.h Slice.cpp Object_mpi.h Object_mpi.cpp vec3.h vec3.cpp 
-	rm -f $(DATA)
-	$(MPICC) -c recorder_mpi.cpp
-	$(MPICC) -c Slice.cpp
-	$(MPICC) -c Object_mpi.cpp
-	$(MPICC) -c vec3.cpp
+# Make and run the MPI recorder
+parallel: recorder_mpi 
+	rm -f $(RECORDFILE)
+	mpirun -np $(P) ./recorder_mpi $(RECORDFILE) $(X) $(Y) $(Z) $(O) $(F)
+
+recorder_mpi: recorder_mpi.o Slice.o Object_mpi.o vec3.o
 	$(MPICC) -o recorder_mpi recorder_mpi.o Slice.o Object_mpi.o vec3.o
-	mpirun -np 4 ./recorder_mpi $(DATA) 
+
+recorder_mpi.o: recorder_mpi.cpp
+	$(MPICC) -c recorder_mpi.cpp
+
+Slice.o: Slice.h Slice.cpp
+	$(MPICC) -c Slice.cpp
+
+Object_mpi.o: Object_mpi.h Object_mpi.cpp
+	$(MPICC) -c Object_mpi.cpp
+
+# Make and run the Serial recorder
+serial: recorder_serial 
+	rm -f $(RECORDFILE)
+	./recorder_serial $(RECORDFILE) $(X) $(Y) $(Z) $(O) $(F)
+
+recorder_serial: recorder_serial.o World.o Object_serial.o vec3.o
+	$(CPP) -o recorder_serial recorder_serial.o World.o Object_serial.o vec3.o
+
 
 # make and run the MPI Player
 play: player
-	./player $(DATA)
+	./player $(RECORDFILE)
 
 #  Generic compile rules
 .cpp.o:
@@ -32,7 +60,7 @@ play: player
 
 #  Delete unwanted files
 clean:
-	rm -f $(EX) $(DATA) *.o *.a
+	rm -f $(EX) $(RECORDFILE) *.o *.a
 
 #  Create archive (include glWindowPos here if you need it)
 graphicslib.a: $(PLAYEROBJ) 
