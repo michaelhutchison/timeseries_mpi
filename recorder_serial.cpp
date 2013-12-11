@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <ctime>
 #include "World.h"
+#include "Object_mpi.h"
 
 using namespace std;
 
@@ -34,11 +35,10 @@ int main(int argc, char * argv[]) {
     // Add objects to the world
     world.createObjects(totalObjects);
  
-  
     // Write the file header
     short headerLengthInBytes = 6;
-    fout.write((char*)&headerLengthInBytes, UNSIGNEDSHORT);
-    fout.write((char*)&nFrames, UNSIGNED);
+    fout.write((char*)&headerLengthInBytes, TYPEUNSIGNEDSHORT);
+    fout.write((char*)&nFrames, TYPEUNSIGNED);
 
     // Initial report
     clock_t startTime, endTime;
@@ -47,7 +47,7 @@ int main(int argc, char * argv[]) {
     cout << "  Generating " << nFrames << " frames" << endl;
     cout << "  World contains " << totalObjects << " objects" << endl;
     cout << "  World size: " << worldSize[0] << "x" << worldSize[1] << "x" << worldSize[2] << endl; 
-    startTime = clock()   
+    startTime = clock();   
     // Initial state
     world.record_frame();
     for (int i=1; i<nFrames; i++) {

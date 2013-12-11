@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <cmath>
-#include <mpi.h>
 
 #include "Object_mpi.h"
 
@@ -36,11 +35,10 @@ struct Neighbors {
     int pz; // positive z neighbor
 };
 
-class Slice {
+class World {
 public:
-    Slice(int r, int s, MPI_File * fh, double worldSize[3]);
-    ~Slice();
-    void setTotalObjects(unsigned n) {nTotalObjects = n;}
+    World(std::ofstream * fh, double worldSize[3]);
+    ~World();
     /* File IO */
     void record_frame();
     void write_frame_header();
@@ -49,36 +47,20 @@ public:
     void createObject();
     void advance_full_step();
     void advance_half_step();
-    void exchange_ghost_objects();
-    void exchange_objects();
     void detect_collisions();
 private:
-    int rank;
-    int nSlices;
-    unsigned nTotalObjects; // count of all objects in the world
-    MPI_File * fileHandle;
-    double overlapWidth;
+    std::ofstream * fileHandle;
     Bounds bounds;
-    Bounds innerBounds;
-    Neighbors neighbors;
     std::vector<Object_mpi *> objects;
-    std::vector<Object_mpi *> ghostObjects;
     /* boundary cases */
-    float roiWidth; // width of region-of-interest
-    std::vector<Object_mpi *> nxRoiObjects;
-    std::vector<Object_mpi *> pxRoiObjects;
 
     /* object IDs */
     unsigned nextObjectID;
-    int minID;
-    int maxID; 
+    unsigned minID;
+    unsigned maxID; 
     unsigned nextFrameID;
 
     /* Private methods */
-    void store_object_state(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, Object_mpi * o);
-    void send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank);
-    void receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * objList);
-
     void detect_collisions_world_boundaries();
     void handle_collision(Object_mpi * obj1, Object_mpi * obj2);
 

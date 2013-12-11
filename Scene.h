@@ -18,9 +18,11 @@ class Scene {
     void display();
     void initialize(char * file);
     void advanceFrame();
+    void setWorldSize(double size[3]);
 private:
     int W;
     int H;
+    double worldX,worldY,worldZ; 
     Texture textures;
     Light light;
     TimeSeries reader;

@@ -1,7 +1,7 @@
 #include "World.h"
 
 /* Constructor */
-World::World(ofstream * fh, double worldSize[3]) {
+World::World(std::ofstream * fh, double worldSize[3]) {
     fileHandle = fh;
 
     // initialize world boundaries
@@ -21,22 +21,22 @@ World::World(ofstream * fh, double worldSize[3]) {
 }
 World::~World() {
     // Release dynamically allocated memory
-    for (int i=0; i<objects.size(); i++) 
+    for (unsigned i=0; i<objects.size(); i++) 
         delete objects[i];
 }
 void World::write_frame_header() {
-    unsigned short objectLength = Object_serial::objectLengthInBytes;
+    unsigned short objectLength = Object_mpi::objectLengthInBytes;
     unsigned long frameSizeInBytes = objects.size() * objectLength;
 
     // write frame size in bytes
-    (*fileHandle).write((char*)&frameSizeInBytes, UNSIGNEDLONG);
+    (*fileHandle).write((char*)&frameSizeInBytes, TYPEUNSIGNEDLONG);
     // write frame ID
-    (*fileHandle).write((char*)&nextFrameID, UNSIGNED);
+    (*fileHandle).write((char*)&nextFrameID, TYPEUNSIGNED);
     // Write number of objects
     unsigned nObjects = objects.size();
-    (*fileHandle).write((char*)&nObjects, UNSIGNED);
+    (*fileHandle).write((char*)&nObjects, TYPEUNSIGNED);
     // Write length of an object
-    (*fileHandle).write((char*)&objectLength, UNSIGNEDSHORT);
+    (*fileHandle).write((char*)&objectLength, TYPEUNSIGNEDSHORT);
 
 
     nextFrameID++;
@@ -45,28 +45,19 @@ void World::write_frame_header() {
 void World::record_frame() {
     // Save the current frame to the animation record
 
-    // process with rank 0 writes the frame header
-    if (rank == 0) {
-        write_frame_header();
-    }
-    // Let all processes catch up
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_File_seek_shared(*fileHandle, 0, MPI_SEEK_END);
+    write_frame_header();
     
     // Create buffer containing all object states
-    unsigned totalBytes = objects.size() * Object_serial::objectLengthInBytes;
+    unsigned totalBytes = objects.size() * Object_mpi::objectLengthInBytes;
     char * objectBuffer = new char[totalBytes];
     memset(objectBuffer, 0, sizeof(objectBuffer));
-    for (int i=0; i<objects.size(); i++) {
+    for (unsigned i=0; i<objects.size(); i++) {
         objects[i]->get_bytes(&objectBuffer[i*60]);
     }
-    // Write the buffer
-    MPI_Status status;
-    MPI_File_write_ordered(*fileHandle,
-                        objectBuffer,
-                        totalBytes,
-                        MPI_BYTE,
-                        &status);
+
+
+    (*fileHandle).write(objectBuffer, totalBytes);
+
 }
 
 
@@ -74,7 +65,7 @@ void World::createObject() {
     // Do nothing if ID range has been used up
     if (nextObjectID > maxID) return;
     // Create new object, assign ID
-    Object_serial * o = new Object_serial;
+    Object_mpi * o = new Object_mpi;
     objects.push_back(o);
     o->setID(nextObjectID);
     nextObjectID++;
@@ -96,18 +87,18 @@ void World::createObject() {
 
 void World::advance_full_step() {
     /* Advances position and velocity a half-step for each object */
-    for (int i=0; i<objects.size(); i++) {
+    for (unsigned i=0; i<objects.size(); i++) {
         objects[i]->advance_full_step();
     }   
 }
 void World::advance_half_step() {
     /* Advances position and velocity a half-step for each object */
-    for (int i=0; i<objects.size(); i++) {
+    for (unsigned i=0; i<objects.size(); i++) {
         objects[i]->advance_half_step();
     }   
 }
 
-void World::handle_collision(Object_serial * obj1, Object_serial * obj2) {
+void World::handle_collision(Object_mpi * obj1, Object_mpi * obj2) {
 
     // Get position vectors
     Vec3 obj1Position = obj1->getPosition();
@@ -141,23 +132,10 @@ void World::handle_collision(Object_serial * obj1, Object_serial * obj2) {
 
 }
 void World::detect_collisions() {
-    // Handle collisions with ghost objects
-    for (std::vector<Object_serial *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-        for (std::vector<Object_serial *>::iterator ghostItr = ghostObjects.begin(); ghostItr != ghostObjects.end(); ++ghostItr) {
-            // Get distance between centers of spheres
-            double distance = sqrt( pow((*itr)->x()-(*ghostItr)->x(), 2) + 
-                                    pow((*itr)->y()-(*ghostItr)->y(), 2) +
-                                    pow((*itr)->z()-(*ghostItr)->z(), 2) );
-            if (distance < 2*(*itr)->getRadius()) {
-                handle_collision((*itr), (*ghostItr));
-                //std::cout << "BOUNCE" << std::endl;
-            }
-        }    
-    }
     // Handle collisions with local objects
     //double minDistance = 20.0;
-    for (std::vector<Object_serial *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-        for (std::vector<Object_serial *>::iterator otherItr = itr; otherItr != objects.end(); ++otherItr) {
+    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+        for (std::vector<Object_mpi *>::iterator otherItr = itr; otherItr != objects.end(); ++otherItr) {
             if ((*itr)->getID() != (*otherItr)->getID()) {
                 // Get distance between centers of spheres
                 double distance = sqrt( pow((*itr)->x()-(*otherItr)->x(), 2) + 
@@ -178,16 +156,16 @@ void World::detect_collisions() {
 void World::detect_collisions_world_boundaries() {
     
     // NOTE: only handles collisions with world boundaries.
-    for (std::vector<Object_serial *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
         Vec3 dp;
         Vec3 dv(1,1,1);
 
         // x boundaries
-        if (neighbors.px == -1 && (*itr)->x() + (*itr)->getRadius() > bounds.px) {
+        if ((*itr)->x() + (*itr)->getRadius() > bounds.px) {
             dp.x = bounds.px - ((*itr)->x() + (*itr)->getRadius());
             dv.x = -1;
         } 
-        else if (neighbors.nx == -1 && (*itr)->x() - (*itr)->getRadius() < bounds.nx) {
+        else if ((*itr)->x() - (*itr)->getRadius() < bounds.nx) {
             dp.x = bounds.nx - ((*itr)->x() - (*itr)->getRadius()); 
             dv.x = -1;
         }

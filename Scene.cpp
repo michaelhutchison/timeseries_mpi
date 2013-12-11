@@ -5,6 +5,9 @@ Scene::Scene() : model(1000) {
     axesOff();
     W = 600;
     H = 600;
+    worldX=100;
+    worldY=100;
+    worldZ=100;
     backgroundColor[0] = 1.0;
     backgroundColor[1] = 1.0;
     backgroundColor[2] = 1.0;
@@ -32,6 +35,12 @@ Scene::Scene() : model(1000) {
     light.setPosition(60,60,60);
 }
 Scene::~Scene() {
+
+}
+void Scene::setWorldSize(double size[3]) {
+    worldX = size[0];
+    worldY = size[1];
+    worldZ = size[2];
 
 }
 void Scene::initialize(char * file) {
@@ -79,7 +88,7 @@ void Scene::display() {
     */
     // Draw box bounding the world
     WireframeCube(0,0,0,
-                  100,100,100,
+                  worldX,worldY, worldZ,
                   0,0,0,0);
 
     // Draw recorded scene

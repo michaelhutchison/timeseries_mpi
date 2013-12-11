@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <cmath>
-#include <mpi.h>
 
 #define TYPEUNSIGNEDSHORT sizeof(unsigned short)
 #define TYPEUNSIGNED sizeof(unsigned)

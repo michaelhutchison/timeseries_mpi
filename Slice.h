@@ -63,10 +63,6 @@ private:
     Neighbors neighbors;
     std::vector<Object_mpi *> objects;
     std::vector<Object_mpi *> ghostObjects;
-    /* boundary cases */
-    float roiWidth; // width of region-of-interest
-    std::vector<Object_mpi *> nxRoiObjects;
-    std::vector<Object_mpi *> pxRoiObjects;
 
     /* object IDs */
     unsigned nextObjectID;

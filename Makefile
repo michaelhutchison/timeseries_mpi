@@ -34,21 +34,18 @@ recorder_mpi.o: recorder_mpi.cpp
 Slice.o: Slice.h Slice.cpp
 	$(MPICC) -c Slice.cpp
 
-Object_mpi.o: Object_mpi.h Object_mpi.cpp
-	$(MPICC) -c Object_mpi.cpp
-
 # Make and run the Serial recorder
 serial: recorder_serial 
 	rm -f $(RECORDFILE)
 	./recorder_serial $(RECORDFILE) $(X) $(Y) $(Z) $(O) $(F)
 
-recorder_serial: recorder_serial.o World.o Object_serial.o vec3.o
-	$(CPP) -o recorder_serial recorder_serial.o World.o Object_serial.o vec3.o
+recorder_serial: recorder_serial.o World.o Object_mpi.o vec3.o
+	$(CPP) -o recorder_serial recorder_serial.o World.o Object_mpi.o vec3.o
 
 
 # make and run the MPI Player
 play: player
-	./player $(RECORDFILE)
+	./player $(RECORDFILE) $(X) $(Y) $(Z)
 
 #  Generic compile rules
 .cpp.o:
@@ -60,7 +57,7 @@ play: player
 
 #  Delete unwanted files
 clean:
-	rm -f $(EX) $(RECORDFILE) *.o *.a
+	rm -f $(EX) *.o *.a
 
 #  Create archive (include glWindowPos here if you need it)
 graphicslib.a: $(PLAYEROBJ) 
