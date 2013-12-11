@@ -5,8 +5,8 @@ View::View() {
     elevationAngle=45;  //  Elevation of view angle
     fieldOfView=35;     //  Field of view (for perspective)
     aspectRatio=1;      //  Aspect ratio
-    dimension=14.0;     //  Size of world
-    distanceFromOrigin = 1.8;
+    dimension=40;     //  Size of world
+    distanceFromOrigin = 1.0;
 
     setEyePosition();
     vx = 0;

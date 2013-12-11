@@ -15,14 +15,14 @@ class View {
     void setElevation(int el);
     void setFieldOfView(int fov) {fieldOfView = fov;}
     void setAspectRatio(int asp) {aspectRatio = asp;}
-    void setDimension(int dim) {dimension = dim;}
+    void setDimension(double dim) {dimension = dim;}
     void setDistanceFromOrigin(float d); 
     
     int getAzimuth() {return azimuthAngle;}
     int getElevation() {return elevationAngle;}
     int getFieldOfView() {return fieldOfView;}
     int getAspectRatio() {return aspectRatio;}
-    int getDimension() {return dimension;}
+    double getDimension() {return dimension;}
     int getDistanceFromOrigin() {return distanceFromOrigin;}
 
     void reshape(int width,int height);
@@ -35,7 +35,7 @@ class View {
     int elevationAngle;
     int fieldOfView;
     int aspectRatio;
-    int dimension;
+    double dimension;
     double distanceFromOrigin;
 
     double ex,ey,ez;  // position of viewer

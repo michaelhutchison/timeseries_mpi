@@ -2,7 +2,7 @@
 
 
 Scene::Scene() : model(1000) {
-    axesOn();
+    axesOff();
     W = 600;
     H = 600;
     backgroundColor[0] = 1.0;
@@ -27,6 +27,9 @@ Scene::Scene() : model(1000) {
     colors[13].set(1.0, 0.5, 1.0);
     colors[14].set(0.5, 1.0, 1.0);
     colors[15].set(1.0, 0.1, 0.3);
+
+    // Initialize the light
+    light.setPosition(60,60,60);
 }
 Scene::~Scene() {
 
@@ -54,7 +57,7 @@ void Scene::display() {
                  backgroundColor[2],
                  backgroundColor[3]);
  	glColor3f(1,1,1);
-    if (drawAxesOn) drawAxes();
+    if (drawAxesOn) drawAxes(-55,-55,-55);
 
     // Draw real time scene
     /*
@@ -74,8 +77,13 @@ void Scene::display() {
         else { std::cout << "its zero" << std::endl;}
     }
     */
+    // Draw box bounding the world
+    WireframeCube(0,0,0,
+                  100,100,100,
+                  0,0,0,0);
 
     // Draw recorded scene
+    double radius = 1.0;
     FrameState * frame = reader.get_next_frame();
     if (frame != 0) {
         unsigned long nObjects = frame->get_num_objects();
@@ -91,7 +99,7 @@ void Scene::display() {
                 //Cube(o->x(), o->y(), o->z(),
                 //           0.4,0.4,0.4,
                 //           o->a_r(),o->x_r(),o->y_r(),o->z_r());
-                Sphere(o->x(), o->y(), o->z(), 0.2);
+                Sphere(o->x(), o->y(), o->z(), radius);
             }
         }
     }
@@ -99,9 +107,11 @@ void Scene::display() {
 /*
 Draws X Y Z axes
 */
-void Scene::drawAxes()
+void Scene::drawAxes(double x, double y, double z)
 {
-	double len=1;
+    glPushMatrix();
+	glTranslated(x,y,z);
+	double len=5;
  	glColor3f(1,1,1);
     glBegin(GL_LINES);
     glVertex3d(0.0,0.0,0.0);
@@ -118,14 +128,16 @@ void Scene::drawAxes()
     Print("Y");
     glRasterPos3d(0.0,0.0,len);
     Print("Z");
+	glPopMatrix();
 }
+
 /*
-Draws a cube
+Draws a wirefram cube
 centered at (x,y,z)
 with size (xLength,yLength,zLength)
 rotated th degrees around (rx,ry,rz)
 */
-void Scene::Cube (double x,double y,double z,
+void Scene::WireframeCube (double x,double y,double z,
 	   double xLength, double yLength, double zLength,
 	   double th,double rx,double ry,double rz)
 {
@@ -134,48 +146,34 @@ void Scene::Cube (double x,double y,double z,
 	glTranslated(x,y,z);
 	glRotated(th,rx,ry,rz);
    	glScaled(xLength/2,yLength/2,zLength/2);
-	glBegin(GL_QUADS);
-	// +x side
-   	glNormal3f( 1, 0, 0);
-	glVertex3d(1,1,1);
+	// +x side and -x side and one edge
+	glBegin(GL_LINE_STRIP);
+	// +x side and one edge
+    glVertex3d(1,1,1);
 	glVertex3d(1,1,-1);
 	glVertex3d(1,-1,-1);
 	glVertex3d(1,-1,1);
-	// +z side
-  	glNormal3f( 0, 0, 1);
 	glVertex3d(1,1,1);
-	glVertex3d(-1,1,1);
-	glVertex3d(-1,-1,1);
-	glVertex3d(1,-1,1);
-	// -x side
-   	glNormal3f( -1, 0, 0);
+    // -x side
 	glVertex3d(-1,1,1);
 	glVertex3d(-1,1,-1);
 	glVertex3d(-1,-1,-1);
 	glVertex3d(-1,-1,1);
-	// -z side
-  	glNormal3f( 0, 0, -1);
-	glVertex3d(1,1,-1);
-	glVertex3d(-1,1,-1);
-	glVertex3d(-1,-1,-1);
-	glVertex3d(1,-1,-1);
-	// Top
-   	glNormal3f( 0, 1, 0);
-	glVertex3d(1,1,1);
 	glVertex3d(-1,1,1);
-	glVertex3d(-1,1,-1);
-	glVertex3d(1,1,-1);
-	// Bottom
-	glNormal3f( 0, -1, 0);
-	glVertex3d(1,-1,1);
-	glVertex3d(-1,-1,1);
+    glEnd();
+    // remaining edges parallel to x-axis
+    glBegin(GL_LINES);
+	glVertex3d( 1, 1,-1);
+	glVertex3d(-1, 1,-1);
+	glVertex3d( 1,-1,-1);
 	glVertex3d(-1,-1,-1);
-	glVertex3d(1,-1,-1);
-	glEnd();
+	glVertex3d( 1,-1, 1);
+	glVertex3d(-1,-1, 1);
+    glEnd();
 	glPopMatrix();
 }
 void Scene::Sphere(double x, double y, double z, double radius) {
-	double inc=30;
+	double inc=45;
 	glPushMatrix();
 	glTranslated(x,y,z);
 	glScaled(radius,radius,radius);

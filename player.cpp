@@ -35,11 +35,12 @@ void display() {
 	// Draw scene
     scene.display();
    	// Write debugging parameters -- (0,0) is lower left corner.
-	/*
+	
     glColor3f(0,0,0);
 	glWindowPos2i(5,10);
-	Print("x: %d  y:%d  mode:%d " , mouse.getx(), mouse.gety(), mouse.getMode());
-	*/
+	//Print("x: %d  y:%d  mode:%d " , mouse.getx(), mouse.gety(), mouse.getMode());
+	Print("azimuth  %d   elevation  %d  dimension  %f   distance  %f" , view.getAzimuth(), view.getElevation(),view.getDimension(), view.getDistanceFromOrigin());
+	
     // Render the scene and make it visible
   	glFlush();   	
    	glutSwapBuffers();
@@ -167,11 +168,13 @@ int main(int argc,char* argv[]) {
     // Initialize the scene
     scene.initialize(filename);
     // Initialize the View
-    view.setAzimuth(102);       //  Azimuth of view angle
-    view.setElevation(45);      //  Elevation of view angle
+    view.setAzimuth(0);       //  Azimuth of view angle
+    view.setElevation(-1);      //  Elevation of view angle
     view.setFieldOfView(35);    //  Field of view (for perspective)
     view.setAspectRatio(1);     //  Aspect ratio
-    view.setDimension(14.0);    //  Size of world
+    view.setDimension(100.0);    //  Size of world
+    view.setDistanceFromOrigin(2.5);
+    view.project();
 	// Pass control to GLUT so it can interact with the user
 	glutMainLoop();
 	return 0;

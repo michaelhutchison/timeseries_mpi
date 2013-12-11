@@ -28,12 +28,17 @@ private:
     char filename[100];
  
     void drawScene();
-    void drawAxes();
+    void drawAxes() {drawAxes(0,0,0);}
+    void drawAxes(double x, double y, double z);
     bool drawAxesOn;
     float backgroundColor[4];
     void loadTextures();
 
     Vec3 colors[16];
+    void WireframeCube (double x,double y,double z,
+               double xLength, double yLength, double zLength,
+               double th,double rx,double ry,double rz);
+ 
     void Cube (double x,double y,double z,
                double xLength, double yLength, double zLength,
                double th,double rx,double ry,double rz);

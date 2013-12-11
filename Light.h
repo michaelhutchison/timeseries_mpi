@@ -12,7 +12,7 @@ class Light {
     void setSpecular(double a) {specular = a;}
     void setDiffuse(double a) {diffuse = a;}
     void setColor(double a, double b, double c, double d);
-
+    void setPosition(double xx, double yy, double zz);
     void draw();
     void setLighting();
   private:

@@ -15,6 +15,12 @@ Light::Light() {
 Light::~Light() {
 
 }
+void Light::setPosition(double xx, double yy, double zz) {
+    x = xx;
+    y = yy;
+    z = zz;
+
+}
 void Light::draw() {
 
 }
