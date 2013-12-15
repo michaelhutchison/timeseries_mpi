@@ -7,9 +7,12 @@ using namespace std;
 
 int main(int argc, char * argv[]) {
     // Check command line arguments
-    if (argc < 7) {
+    if (argc < 10) {
         cout << "ERROR: Too few command line arguments." << endl;
-        cout << "USAGE: > " << argv[0] << " recordfile world-x-width world-y-width world-z-width objectsInWorld numberOfFrames" << endl;
+        cout << "USAGE: > " << argv[0] << " recordfile \\"
+                                       << " world-x-width world-y-width world-z-width \\"
+                                       << " x-rows y-rows z-rows \\"
+                                       << " objectsInWorld numberOfFrames" << endl;
         return 1;
     }
     // Get parameters from command line
@@ -18,8 +21,12 @@ int main(int argc, char * argv[]) {
     worldSize[0] = atof(argv[2]);
     worldSize[1] = atof(argv[3]);
     worldSize[2] = atof(argv[4]);
-    unsigned totalObjects = atoi(argv[5]);
-    unsigned nFrames = atoi(argv[6]);
+    unsigned sliceRows[3];
+    sliceRows[0] = atoi(argv[5]);
+    sliceRows[1] = atoi(argv[6]);
+    sliceRows[2] = atoi(argv[7]);
+    unsigned totalObjects = atoi(argv[8]);
+    unsigned nFrames = atoi(argv[9]);
 
     // Initialize MPI
     int rank, size;
@@ -32,21 +39,23 @@ int main(int argc, char * argv[]) {
  
     // Create file
     MPI_File fh;
-    MPI_File_open(MPI_COMM_WORLD,
-                  filename,
-                  MPI_MODE_WRONLY | MPI_MODE_CREATE,
-                  MPI_INFO_NULL,
-                  &fh);
-
+    bool writeOn = true;
+    if (writeOn) {
+        MPI_File_open(MPI_COMM_WORLD,
+                      filename,
+                      MPI_MODE_WRONLY | MPI_MODE_CREATE,
+                      MPI_INFO_NULL,
+                      &fh);
+    }
     // Create and initialize a Slice
-    Slice slice(rank, size, &fh, worldSize); 
+    Slice slice(rank, size, &fh, worldSize, sliceRows); 
     // Add objects to the slice
     unsigned objectsPerSlice = totalObjects / size;
     slice.createObjects(objectsPerSlice);
     slice.setTotalObjects(size * objectsPerSlice); 
     
     // Write the file header
-    if (rank == 0) {
+    if (writeOn && rank == 0) {
         MPI_Status status;
         // Write header length in bytes
         short headerLengthInBytes = 6;
@@ -62,7 +71,7 @@ int main(int argc, char * argv[]) {
                                 MPI_UNSIGNED,
                                 &status);
     }
-
+    
     /* Parallel FFD Algorithm */
     double startTime, endTime;
     if (rank == 0) {
@@ -72,11 +81,12 @@ int main(int argc, char * argv[]) {
         cout << "  Generating " << nFrames << " frames" << endl;
         cout << "  World contains " << size * objectsPerSlice << " objects" << endl;
         cout << "  World size: " << worldSize[0] << "x" << worldSize[1] << "x" << worldSize[2] << endl; 
+        cout << "  Slice array: " << sliceRows[0] << "x" << sliceRows[1] << "x" << sliceRows[2] << endl;
             
         startTime = MPI_Wtime();   
     }
     // Initial state
-    slice.record_frame();
+    if (writeOn) slice.record_frame();
     for (int i=1; i<nFrames; i++) {
         // MPI Communication step 1: force synchronization
         // -- Not implemented. This is where one would update
@@ -97,7 +107,7 @@ int main(int argc, char * argv[]) {
         slice.exchange_objects();
 
         // Record this slice's part of the new frame
-        slice.record_frame();
+        if (writeOn) slice.record_frame();
     }
     if (rank == 0) {
         endTime = MPI_Wtime();
@@ -107,7 +117,7 @@ int main(int argc, char * argv[]) {
     }
 
     // Close file
-    MPI_File_close(&fh);
+    if (writeOn) MPI_File_close(&fh);
 
     MPI_Finalize();
 

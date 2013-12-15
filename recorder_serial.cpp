@@ -1,16 +1,17 @@
 #include <iostream>
 #include <cstdlib>
-#include <ctime>
-#include "World.h"
-#include "Object_mpi.h"
+#include "Slice_serial.h"
 
 using namespace std;
 
 int main(int argc, char * argv[]) {
     // Check command line arguments
-    if (argc < 7) {
+    if (argc < 10) {
         cout << "ERROR: Too few command line arguments." << endl;
-        cout << "USAGE: > " << argv[0] << " recordfile world-x-width world-y-width world-z-width objectsInWorld numberOfFrames" << endl;
+        cout << "USAGE: > " << argv[0] << " recordfile \\"
+                                       << " world-x-width world-y-width world-z-width \\"
+                                       << " x-rows y-rows z-rows \\"
+                                       << " objectsInWorld numberOfFrames" << endl;
         return 1;
     }
     // Get parameters from command line
@@ -19,27 +20,42 @@ int main(int argc, char * argv[]) {
     worldSize[0] = atof(argv[2]);
     worldSize[1] = atof(argv[3]);
     worldSize[2] = atof(argv[4]);
-    unsigned totalObjects = atoi(argv[5]);
-    unsigned nFrames = atoi(argv[6]);
+    unsigned sliceRows[3];
+    sliceRows[0] = atof(argv[5]);
+    sliceRows[1] = atof(argv[6]);
+    sliceRows[2] = atof(argv[7]);
+    unsigned totalObjects = atoi(argv[8]);
+    unsigned nFrames = atoi(argv[9]);
 
     // seed randomizer
     srand (time(NULL));
  
     // Create file
     ofstream fout;
-    fout.open(filename, std::ios::out|std::ios::binary);
+    bool writeOn = true;
+    if (writeOn) fout.open(filename, std::ios::out|std::ios::binary);
  
-    // Create and initialize the objects in the world
-    World world(&fout, worldSize);
-
-    // Add objects to the world
-    world.createObjects(totalObjects);
- 
+    // Create and initialize Slices
+    unsigned size = sliceRows[0] * sliceRows[1] * sliceRows[2];
+    unsigned objectsPerSlice = totalObjects / size;
+    vector<Slice_serial *> slices;
+    for (unsigned rank=0; rank<size; rank++) {
+        // Create the slice
+        Slice_serial * slice = new Slice_serial(rank, size, &fout, worldSize, sliceRows); 
+        slices.push_back(slice);
+        // Add objects to the slice
+        slice->createObjects(objectsPerSlice);
+        slice->setTotalObjects(size * objectsPerSlice); 
+    }
+    for (unsigned rank=0; rank<size; rank++) {
+        slices[rank]->set_neighbors(slices);
+    }
     // Write the file header
-    short headerLengthInBytes = 6;
-    fout.write((char*)&headerLengthInBytes, TYPEUNSIGNEDSHORT);
-    fout.write((char*)&nFrames, TYPEUNSIGNED);
-
+    if (writeOn) {
+        short headerLengthInBytes = 6;
+        fout.write((char*)&headerLengthInBytes, TYPEUNSIGNEDSHORT);
+        fout.write((char*)&nFrames, TYPEUNSIGNED);
+    }
     // Initial report
     clock_t startTime, endTime;
     cout << "----------------------------------" << endl;
@@ -47,29 +63,54 @@ int main(int argc, char * argv[]) {
     cout << "  Generating " << nFrames << " frames" << endl;
     cout << "  World contains " << totalObjects << " objects" << endl;
     cout << "  World size: " << worldSize[0] << "x" << worldSize[1] << "x" << worldSize[2] << endl; 
+    cout << "  Slice array: " << sliceRows[0] << "x" << sliceRows[1] << "x" << sliceRows[2] << endl;
     startTime = clock();   
+
     // Initial state
-    world.record_frame();
-    for (int i=1; i<nFrames; i++) {
+    if (writeOn) {
+        for (unsigned i=0; i<slices.size(); i++)
+            slices[i]->record_frame(); 
+    }
+    for (unsigned i=1; i<nFrames; i++) {
+       
+        // Exchange ghost objects
+        for (unsigned i=0; i<slices.size(); i++)
+            slices[i]->clear_ghost_objects();
+        for (unsigned i=0; i<slices.size(); i++)
+            slices[i]->exchange_ghost_objects();
+
         // Advance position and velocity one full step
         // -- Simple explicit Euler steps
-        world.advance_full_step(); 
+        for (unsigned i=0; i<slices.size(); i++)
+            slices[i]->advance_full_step(); 
 
         // Collision detection
-        world.detect_collisions();
+        for (unsigned i=0; i<slices.size(); i++)
+            slices[i]->detect_collisions();
 
-        // Record the new frame
-        world.record_frame();
+        // MPI Communication step 2: update of remote and notification of new bodies
+        for (unsigned i=0; i<slices.size(); i++)
+            slices[i]->exchange_objects();
+
+        // Record each slice's part of the new frame
+        if (writeOn) {
+            for (unsigned i=0; i<slices.size(); i++)
+                slices[i]->record_frame();
+        }
     }
-    
-    // End report
+
+    // Final report
     endTime = clock();
     double elapsedTime = double(endTime - startTime)/CLOCKS_PER_SEC;
     cout << "Finished producing timeseries data in file: " << filename << "." << endl;
     cout << "  Elapsed time: " << elapsedTime << " seconds" << endl;
     
     // Close file
-    fout.close();
+    if (writeOn) fout.close();
+
+    // Clean up dynamic memory
+    for (unsigned i=0; i<slices.size(); i++)
+        delete slices[i];
 
     return 0;
 }

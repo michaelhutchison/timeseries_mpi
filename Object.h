@@ -17,10 +17,10 @@
 #define TYPELONG sizeof(long)
 #define TYPEDOUBLE sizeof(double)
 
-class Object_mpi {
+class Object {
 public:
-    Object_mpi();
-    ~Object_mpi();
+    Object();
+    ~Object();
     /* getters */
     double x() {return position.x;}
     double y() {return position.y;}

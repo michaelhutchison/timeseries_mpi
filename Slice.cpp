@@ -1,10 +1,14 @@
 #include "Slice.h"
 
 /* Constructor */
-Slice::Slice(int r, int s, MPI_File * fh, double worldSize[3]) {
+Slice::Slice(int r, int s, MPI_File * fh, double worldSize[3], unsigned sliceRows[3]) {
     rank = r;
     nSlices = s;
     fileHandle = fh;
+
+    unsigned slicesX = sliceRows[0];
+    unsigned slicesY = sliceRows[1];
+    unsigned slicesZ = sliceRows[2];
 
     // initialize world boundaries
     // -- This might be better to initialize outside this class.
@@ -16,18 +20,40 @@ Slice::Slice(int r, int s, MPI_File * fh, double worldSize[3]) {
     worldBounds.nz = -worldSize[2] * 0.5;
     worldBounds.pz =  worldSize[2] * 0.5;
 
+    // determine position in rows and columns based on rank
+    unsigned rowX = rank % slicesX;
+    unsigned rowY = (rank/slicesX) % slicesY;
+    unsigned rowZ = (rank/(slicesX*slicesY)) % slicesZ;
+    unsigned minInRowX = (rowY * slicesX) + (rowZ*slicesX*slicesY);
+    unsigned maxInRowX = minInRowX + slicesX - 1;
+    unsigned minInRowY = rowX % slicesX + (rowZ*slicesX*slicesY);
+    unsigned maxInRowY = minInRowY + (slicesX*slicesY) - slicesX;
+    unsigned minInRowZ = (rowY*slicesX) + rowX;
+    unsigned maxInRowZ = minInRowZ + (slicesX*slicesY*(slicesZ-1));
+
     // initialize slice boundaries 
     // -- Each slice has a portion of the x-range 
     // -- Each slice covers the entire y-range and z-range
     bounds = worldBounds;
-    double sliceWidth = (worldBounds.px - worldBounds.nx)/nSlices;
-    bounds.nx = worldBounds.nx + (rank * sliceWidth);
-    bounds.px = bounds.nx + sliceWidth;
+    double sliceWidthX = (worldBounds.px - worldBounds.nx)/slicesX;
+    double sliceWidthY = (worldBounds.py - worldBounds.ny)/slicesY;
+    double sliceWidthZ = (worldBounds.pz - worldBounds.nz)/slicesZ;
+    bounds.nx = worldBounds.nx + (rowX * sliceWidthX);
+    bounds.px = bounds.nx + sliceWidthX;
+    bounds.ny = worldBounds.ny + (rowY * sliceWidthY);
+    bounds.py = bounds.ny + sliceWidthY;
+    bounds.nz = worldBounds.nz + (rowZ * sliceWidthZ);
+    bounds.pz = bounds.nz + sliceWidthZ;
+    // inner boundaries
     overlapWidth = 0.3;
     innerBounds = bounds;
-    if (rank > 0) innerBounds.nx += overlapWidth;
-    if (rank < nSlices-1) innerBounds.px -= overlapWidth;
-    
+    if (rank > minInRowX) innerBounds.nx += overlapWidth;
+    if (rank < maxInRowX) innerBounds.px -= overlapWidth;
+    if (rank > minInRowY) innerBounds.ny += overlapWidth;
+    if (rank < maxInRowY) innerBounds.py -= overlapWidth;
+    if (rank > minInRowZ) innerBounds.nz -= overlapWidth;
+    if (rank < maxInRowZ) innerBounds.pz -= overlapWidth;
+
     // Initialize neighbors
     // -- value of -1 indicates no neighbor at that boundary
     neighbors.nx = -1;
@@ -36,8 +62,13 @@ Slice::Slice(int r, int s, MPI_File * fh, double worldSize[3]) {
     neighbors.py = -1;
     neighbors.nz = -1;
     neighbors.pz = -1;
-    if (rank > 0) neighbors.nx = rank-1;
-    if (rank < nSlices-1) neighbors.px = rank+1;
+    if (rank > minInRowX) neighbors.nx = rank-1;
+    if (rank < maxInRowX) neighbors.px = rank+1;
+    if (rank > minInRowY) neighbors.ny = rank-slicesX;
+    if (rank < maxInRowY) neighbors.py = rank+slicesX;
+    if (rank > minInRowZ) neighbors.nz = rank-(slicesX*slicesY);
+    if (rank < maxInRowZ) neighbors.pz = rank+(slicesX*slicesY);
+
 
     // Calculate id range
     // Each slice assigns an id to the objects it creates.
@@ -49,7 +80,9 @@ Slice::Slice(int r, int s, MPI_File * fh, double worldSize[3]) {
     nextObjectID = minID;
     nextFrameID = 0;
     nTotalObjects = 0;
+
 }
+
 Slice::~Slice() {
     // Release dynamically allocated memory
     for (int i=0; i<objects.size(); i++) 
@@ -57,7 +90,7 @@ Slice::~Slice() {
 }
 void Slice::write_frame_header() {
     //std::cout << "I got " << nTotalObjects << " total objects. I have " << objects.size() << std::endl;
-    unsigned short objectLength = Object_mpi::objectLengthInBytes;
+    unsigned short objectLength = Object::objectLengthInBytes;
     unsigned long frameSizeInBytes = nTotalObjects * objectLength;
     MPI_Status status;
     MPI_File_seek(*fileHandle,
@@ -112,7 +145,7 @@ void Slice::record_frame() {
     MPI_File_seek_shared(*fileHandle, 0, MPI_SEEK_END);
     
     // Create buffer containing all object states
-    unsigned totalBytes = objects.size() * Object_mpi::objectLengthInBytes;
+    unsigned totalBytes = objects.size() * Object::objectLengthInBytes;
     char * objectBuffer = new char[totalBytes];
     memset(objectBuffer, 0, sizeof(objectBuffer));
     for (int i=0; i<objects.size(); i++) {
@@ -132,7 +165,7 @@ void Slice::createObject() {
     // Do nothing if this slice has used its ID range
     if (nextObjectID > maxID) return;
     // Create new object, assign ID
-    Object_mpi * o = new Object_mpi;
+    Object * o = new Object;
     objects.push_back(o);
     o->setID(nextObjectID);
     nextObjectID++;
@@ -169,7 +202,7 @@ void Slice::advance_half_step() {
  *   copies an object's id and crucial state information to buffers
  *   in preparation to transfer the object to another slice.
  */
-void Slice::store_object_state(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, Object_mpi * o) {
+void Slice::store_object_state(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, Object * o) {
     // Save object id
     idBuffer->push_back(o->getID());
     // Save object state
@@ -229,7 +262,7 @@ void Slice::send_objects(std::vector<unsigned> * idBuffer, std::vector<double> *
  *   being transferred from another slice.
  *   Creates and ingests new objects once data has been received.
  */
-void Slice::receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * objList) {
+void Slice::receive_objects(unsigned sourceRank, std::vector<Object *> * objList) {
     unsigned doublesPerObject = 10;
     // Receive number of objects
     unsigned nObjects;
@@ -264,7 +297,7 @@ void Slice::receive_objects(unsigned sourceRank, std::vector<Object_mpi *> * obj
     MPI_Wait(&request, MPI_STATUSES_IGNORE);
     // Ingest new objects
     for (int i=0; i<nObjects; i++) {
-        Object_mpi * o = new Object_mpi;
+        Object * o = new Object;
         objList->push_back(o);
         o->setID(idBuffer[i]);
         Vec3 position(stateBuffer[i*doublesPerObject + 0],
@@ -309,48 +342,71 @@ void Slice::exchange_ghost_objects() {
     //   double              angle of rotation
     
     // Create buffer of objects to transfer
-    std::vector<unsigned> idBuffer;
-    std::vector<double> stateBuffer;
+    std::vector<unsigned> idBufferNX;
+    std::vector<unsigned> idBufferPX;
+    std::vector<unsigned> idBufferNY;
+    std::vector<unsigned> idBufferPY;
+    std::vector<unsigned> idBufferNZ;
+    std::vector<unsigned> idBufferPZ;
+    std::vector<double> stateBufferNX;
+    std::vector<double> stateBufferPX;
+    std::vector<double> stateBufferNY;
+    std::vector<double> stateBufferPY;
+    std::vector<double> stateBufferNZ;
+    std::vector<double> stateBufferPZ;
     int doublesPerObject = 10;
 
     // Results objects
-    MPI_Request leftSendRequestList[3];
-    MPI_Request rightSendRequestList[3];
+    MPI_Request nxSendRequestList[3];
+    MPI_Request pxSendRequestList[3];
+    MPI_Request nySendRequestList[3];
+    MPI_Request pySendRequestList[3];
+    MPI_Request nzSendRequestList[3];
+    MPI_Request pzSendRequestList[3];
 
     // Clear the ghost object list
+    for (unsigned i=0; i<ghostObjects.size(); i++)
+        delete ghostObjects[i];
     ghostObjects.clear();
 
-    // Send to negative-x neighbor
-    if (neighbors.nx != -1) {
-        idBuffer.clear();
-        stateBuffer.clear();
-        // Produce buffer of objects to transfer to nx neighbor
-        for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-            if ((*itr)->x() < innerBounds.nx) {
-                // Copy the object's id and state into transfer buffers
-                store_object_state(&idBuffer, &stateBuffer, (*itr));
-            }
+    // Examine each object
+    for (std::vector<Object *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+        if (neighbors.nx != -1 && (*itr)->x() < innerBounds.nx) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferNX, &stateBufferNX, (*itr));
+        } 
+        if (neighbors.px != -1 && (*itr)->x() > innerBounds.px) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferPX, &stateBufferPX, (*itr));
         }
-        // Transfer the set of objects to the left (negative-x) neighbor
-        send_objects(&idBuffer, &stateBuffer, rank-1, leftSendRequestList);
-    }
-    // Send to positive-x neighbor
-    if (neighbors.px != -1) {
-        idBuffer.clear();
-        stateBuffer.clear();
-        // Produce buffer of objects to transfer to px neighbor
-        for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-            if ((*itr)->x() >= innerBounds.px) {
-                // Copy the object's id and state into transfer buffers
-                store_object_state(&idBuffer, &stateBuffer, (*itr));
-            }
+        if (neighbors.ny != -1 && (*itr)->y() < innerBounds.ny) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferNY, &stateBufferNY, (*itr));
         }
-        // Transfer the set of objects to the right (positive-x) neighbor
-        send_objects(&idBuffer, &stateBuffer, rank+1, rightSendRequestList);
-        
+        if (neighbors.py != -1 && (*itr)->y() > innerBounds.py) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferPY, &stateBufferPY, (*itr));
+        } 
+        if (neighbors.nz != -1 && (*itr)->z() < innerBounds.nz) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferNZ, &stateBufferNZ, (*itr));
+        }
+        if (neighbors.pz != -1 && (*itr)->z() > innerBounds.pz) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferPZ, &stateBufferPZ, (*itr));
+        } 
+ 
     }
 
-   // Receive from negative-x neighbors
+    // Send object lists
+    if (neighbors.nx != -1) send_objects(&idBufferNX, &stateBufferNX, neighbors.nx, nxSendRequestList);
+    if (neighbors.px != -1) send_objects(&idBufferPX, &stateBufferPX, neighbors.px, pxSendRequestList);
+    if (neighbors.ny != -1) send_objects(&idBufferNY, &stateBufferNY, neighbors.ny, nySendRequestList);
+    if (neighbors.py != -1) send_objects(&idBufferPY, &stateBufferPY, neighbors.py, pySendRequestList);
+    if (neighbors.nz != -1) send_objects(&idBufferNZ, &stateBufferNZ, neighbors.nz, nzSendRequestList);
+    if (neighbors.pz != -1) send_objects(&idBufferPZ, &stateBufferPZ, neighbors.pz, pzSendRequestList);
+
+    // Receive from negative-x neighbors
     if (neighbors.nx != -1) {
         receive_objects(rank-1, &ghostObjects);
     }
@@ -358,9 +414,30 @@ void Slice::exchange_ghost_objects() {
     if (neighbors.px != -1) {
         receive_objects(rank+1, &ghostObjects);
     }
+    // Receive from negative-y neighbors
+    if (neighbors.ny != -1) {
+        receive_objects(neighbors.ny, &ghostObjects);
+    }
+    // Receive from positive-y neighbors
+    if (neighbors.py != -1) {
+        receive_objects(neighbors.py, &ghostObjects);
+    }
+    // Receive from negative-z neighbors
+    if (neighbors.nz != -1) {
+        receive_objects(neighbors.nz, &ghostObjects);
+    }
+    // Receive from positive-z neighbors
+    if (neighbors.pz != -1) {
+        receive_objects(neighbors.pz, &ghostObjects);
+    }
+ 
     // Wait for communication to be complete
-    if (neighbors.nx != -1) { MPI_Waitall(3, leftSendRequestList, MPI_STATUSES_IGNORE); }
-    if (neighbors.px != -1) { MPI_Waitall(3, rightSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.nx != -1) { MPI_Waitall(3, nxSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.px != -1) { MPI_Waitall(3, pxSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.ny != -1) { MPI_Waitall(3, nySendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.py != -1) { MPI_Waitall(3, pySendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.nz != -1) { MPI_Waitall(3, nzSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.pz != -1) { MPI_Waitall(3, pzSendRequestList, MPI_STATUSES_IGNORE); }
 }
 
 void Slice::exchange_objects() {
@@ -389,54 +466,75 @@ void Slice::exchange_objects() {
     //   double              angle of rotation
     
     // Create buffer of objects to transfer
-    std::vector<unsigned> idBuffer;
-    std::vector<double> stateBuffer;
+    std::vector<unsigned> idBufferNX;
+    std::vector<unsigned> idBufferPX;
+    std::vector<unsigned> idBufferNY;
+    std::vector<unsigned> idBufferPY;
+    std::vector<unsigned> idBufferNZ;
+    std::vector<unsigned> idBufferPZ;
+    std::vector<double> stateBufferNX;
+    std::vector<double> stateBufferPX;
+    std::vector<double> stateBufferNY;
+    std::vector<double> stateBufferPY;
+    std::vector<double> stateBufferNZ;
+    std::vector<double> stateBufferPZ;
     int doublesPerObject = 10;
 
     // Results objects
-    MPI_Request leftSendRequestList[3];
-    MPI_Request rightSendRequestList[3];
+    MPI_Request nxSendRequestList[3];
+    MPI_Request pxSendRequestList[3];
+    MPI_Request nySendRequestList[3];
+    MPI_Request pySendRequestList[3];
+    MPI_Request nzSendRequestList[3];
+    MPI_Request pzSendRequestList[3];
 
-    // Send to negative-x neighbor
-    if (neighbors.nx != -1) {
-        idBuffer.clear();
-        stateBuffer.clear();
-        // Produce buffer of objects to transfer to nx neighbor
-        for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ) {
-            if ((*itr)->x() < bounds.nx) {
-                // Copy the object's id and state into transfer buffers
-                store_object_state(&idBuffer, &stateBuffer, (*itr));
-                // Delete the object reference from the local list
-                itr = objects.erase(itr);
-            } else {
-                // Advance the iterator
-                ++itr;
-            }
+    // Examine each object
+    for (std::vector<Object *>::iterator itr = objects.begin(); itr != objects.end(); ) {
+        if (neighbors.nx != -1 && (*itr)->x() < bounds.nx) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferNX, &stateBufferNX, (*itr));
+            // Delete the object reference from the local list
+            itr = objects.erase(itr);
+        } else if (neighbors.px != -1 && (*itr)->x() > bounds.px) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferPX, &stateBufferPX, (*itr));
+            // Delete the object reference from the local list
+            itr = objects.erase(itr);
+        } else if (neighbors.ny != -1 && (*itr)->y() < bounds.ny) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferNY, &stateBufferNY, (*itr));
+            // Delete the object reference from the local list
+            itr = objects.erase(itr);
+        } else if (neighbors.py != -1 && (*itr)->y() > bounds.py) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferPY, &stateBufferPY, (*itr));
+            // Delete the object reference from the local list
+            itr = objects.erase(itr);
+        } else if (neighbors.nz != -1 && (*itr)->z() < bounds.nz) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferNZ, &stateBufferNZ, (*itr));
+            // Delete the object reference from the local list
+            itr = objects.erase(itr);
+        } else if (neighbors.pz != -1 && (*itr)->z() > bounds.pz) {
+            // Copy the object's id and state into transfer buffers
+            store_object_state(&idBufferPZ, &stateBufferPZ, (*itr));
+            // Delete the object reference from the local list
+            itr = objects.erase(itr);
+        } else {
+            // Advance the iterator
+            ++itr;
         }
-        // Transfer the set of objects to the neighbor
-        send_objects(&idBuffer, &stateBuffer, rank-1, leftSendRequestList);
-    }
-    // Send to positive-x neighbor
-    if (neighbors.px != -1) {
-        idBuffer.clear();
-        stateBuffer.clear();
-        // Produce buffer of objects to transfer to nx neighbor
-        for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ) {
-            if ((*itr)->x() >= bounds.px) {
-                // Copy the object's id and state into transfer buffers
-                store_object_state(&idBuffer, &stateBuffer, (*itr));
-                // Delete the object reference from the local list
-                itr = objects.erase(itr);
-            } else {
-                // Advance the iterator
-                ++itr;
-            }
-        }
-        // Transfer the set of objects to the neighbor
-        send_objects(&idBuffer, &stateBuffer, rank+1, rightSendRequestList);
     }
 
-   // Receive from negative-x neighbors
+    // Send object lists
+    if (neighbors.nx != -1) send_objects(&idBufferNX, &stateBufferNX, neighbors.nx, nxSendRequestList);
+    if (neighbors.px != -1) send_objects(&idBufferPX, &stateBufferPX, neighbors.px, pxSendRequestList);
+    if (neighbors.ny != -1) send_objects(&idBufferNY, &stateBufferNY, neighbors.ny, nySendRequestList);
+    if (neighbors.py != -1) send_objects(&idBufferPY, &stateBufferPY, neighbors.py, pySendRequestList);
+    if (neighbors.nz != -1) send_objects(&idBufferNZ, &stateBufferNZ, neighbors.nz, nzSendRequestList);
+    if (neighbors.pz != -1) send_objects(&idBufferPZ, &stateBufferPZ, neighbors.pz, pzSendRequestList);
+
+    // Receive from negative-x neighbors
     if (neighbors.nx != -1) {
         receive_objects(rank-1, &objects);
     }
@@ -444,14 +542,33 @@ void Slice::exchange_objects() {
     if (neighbors.px != -1) {
         receive_objects(rank+1, &objects);
     }
+    // Receive from negative-y neighbors
+    if (neighbors.ny != -1) {
+        receive_objects(neighbors.ny, &objects);
+    }
+    // Receive from positive-y neighbors
+    if (neighbors.py != -1) {
+        receive_objects(neighbors.py, &objects);
+    }
+    // Receive from negative-z neighbors
+    if (neighbors.nz != -1) {
+        receive_objects(neighbors.nz, &objects);
+    }
+    // Receive from positive-z neighbors
+    if (neighbors.pz != -1) {
+        receive_objects(neighbors.pz, &objects);
+    }
  
     // Wait for communication to be complete
-    if (neighbors.nx != -1) { MPI_Waitall(3, leftSendRequestList, MPI_STATUSES_IGNORE); }
-    if (neighbors.px != -1) { MPI_Waitall(3, rightSendRequestList, MPI_STATUSES_IGNORE); }
- 
+    if (neighbors.nx != -1) { MPI_Waitall(3, nxSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.px != -1) { MPI_Waitall(3, pxSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.ny != -1) { MPI_Waitall(3, nySendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.py != -1) { MPI_Waitall(3, pySendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.nz != -1) { MPI_Waitall(3, nzSendRequestList, MPI_STATUSES_IGNORE); }
+    if (neighbors.pz != -1) { MPI_Waitall(3, pzSendRequestList, MPI_STATUSES_IGNORE); }
 }
 
-void Slice::handle_collision(Object_mpi * obj1, Object_mpi * obj2) {
+void Slice::handle_collision(Object * obj1, Object * obj2) {
 
     // Get position vectors
     Vec3 obj1Position = obj1->getPosition();
@@ -486,8 +603,8 @@ void Slice::handle_collision(Object_mpi * obj1, Object_mpi * obj2) {
 }
 void Slice::detect_collisions() {
     // Handle collisions with ghost objects
-    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-        for (std::vector<Object_mpi *>::iterator ghostItr = ghostObjects.begin(); ghostItr != ghostObjects.end(); ++ghostItr) {
+    for (std::vector<Object *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+        for (std::vector<Object *>::iterator ghostItr = ghostObjects.begin(); ghostItr != ghostObjects.end(); ++ghostItr) {
             // Get distance between centers of spheres
             double distance = sqrt( pow((*itr)->x()-(*ghostItr)->x(), 2) + 
                                     pow((*itr)->y()-(*ghostItr)->y(), 2) +
@@ -500,8 +617,8 @@ void Slice::detect_collisions() {
     }
     // Handle collisions with local objects
     //double minDistance = 20.0;
-    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
-        for (std::vector<Object_mpi *>::iterator otherItr = itr; otherItr != objects.end(); ++otherItr) {
+    for (std::vector<Object *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+        for (std::vector<Object *>::iterator otherItr = itr; otherItr != objects.end(); ++otherItr) {
             if ((*itr)->getID() != (*otherItr)->getID()) {
                 // Get distance between centers of spheres
                 double distance = sqrt( pow((*itr)->x()-(*otherItr)->x(), 2) + 
@@ -522,7 +639,7 @@ void Slice::detect_collisions() {
 void Slice::detect_collisions_world_boundaries() {
     
     // NOTE: only handles collisions with world boundaries.
-    for (std::vector<Object_mpi *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
+    for (std::vector<Object *>::iterator itr = objects.begin(); itr != objects.end(); ++itr) {
         Vec3 dp;
         Vec3 dv(1,1,1);
 
@@ -536,23 +653,35 @@ void Slice::detect_collisions_world_boundaries() {
             dv.x = -1;
         }
         // y boundaries
-        if ((*itr)->y() + (*itr)->getRadius() > bounds.py) {
+        if (neighbors.py == -1 && (*itr)->y() + (*itr)->getRadius() > bounds.py) {
             dp.y = bounds.py - ((*itr)->y() + (*itr)->getRadius());
             dv.y = -1;
         } 
-        else if ((*itr)->y() - (*itr)->getRadius() < bounds.ny) {
+        else if (neighbors.ny == -1 && (*itr)->y() - (*itr)->getRadius() < bounds.ny) {
             dp.y = bounds.ny - ((*itr)->y() - (*itr)->getRadius()); 
             dv.y = -1;
         }
         // z boundaries
-        if ((*itr)->z() + (*itr)->getRadius() > bounds.pz) {
+        if (neighbors.pz == -1 && (*itr)->z() + (*itr)->getRadius() > bounds.pz) {
             dp.z = bounds.pz - ((*itr)->z() + (*itr)->getRadius());
-            dv.z = -1; 
+            dv.z = -1;
         } 
-        else if ((*itr)->z() - (*itr)->getRadius() < bounds.nz) {
+        else if (neighbors.nz == -1 && (*itr)->z() - (*itr)->getRadius() < bounds.nz) {
             dp.z = bounds.nz - ((*itr)->z() - (*itr)->getRadius()); 
             dv.z = -1;
         }
+        
+        //
+        /*
+        if (neighbors.pz == -1 && (*itr)->z() + (*itr)->getRadius() > bounds.pz) {
+            dp.z = bounds.pz - ((*itr)->z() + (*itr)->getRadius());
+            dv.z = -1; 
+        } 
+        else if (neighbors.nz == -1 && (*itr)->z() - (*itr)->getRadius() < bounds.nz) {
+            dp.z = bounds.nz - ((*itr)->z() - (*itr)->getRadius()); 
+            dv.z = -1;
+        }
+        */
         // Update object position
         (*itr)->delta_position(dp);
         (*itr)->multiply_velocity(dv);

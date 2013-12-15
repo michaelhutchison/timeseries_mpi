@@ -14,19 +14,23 @@ X=100
 Y=100
 Z=100
 # number of processes to use in MPI implementation
-P=4
+XSLICES=4
+YSLICES=1
+ZSLICES=1
+PROCESSORS=$(shell echo $(XSLICES)*$(YSLICES)*$(ZSLICES) | bc)
 # Number of frames to produce
-F=400
+FRAMES=500
 # Number of objects to create in the world
-O=2000
+OBJECTS=2000
+RESULTSFILE=results.txt
 
 # Make and run the MPI recorder
 parallel: recorder_mpi 
 	rm -f $(RECORDFILE)
-	mpirun -np $(P) ./recorder_mpi $(RECORDFILE) $(X) $(Y) $(Z) $(O) $(F)
+	mpirun -np $(PROCESSORS) ./recorder_mpi $(RECORDFILE) $(X) $(Y) $(Z) $(XSLICES) $(YSLICES) $(ZSLICES) $(OBJECTS) $(FRAMES) | tee -a $(RESULTSFILE)
 
-recorder_mpi: recorder_mpi.o Slice.o Object_mpi.o vec3.o
-	$(MPICC) -o recorder_mpi recorder_mpi.o Slice.o Object_mpi.o vec3.o
+recorder_mpi: recorder_mpi.o Slice.o Object.o vec3.o
+	$(MPICC) -o recorder_mpi recorder_mpi.o Slice.o Object.o vec3.o
 
 recorder_mpi.o: recorder_mpi.cpp
 	$(MPICC) -c recorder_mpi.cpp
@@ -37,10 +41,10 @@ Slice.o: Slice.h Slice.cpp
 # Make and run the Serial recorder
 serial: recorder_serial 
 	rm -f $(RECORDFILE)
-	./recorder_serial $(RECORDFILE) $(X) $(Y) $(Z) $(O) $(F)
+	./recorder_serial $(RECORDFILE) $(X) $(Y) $(Z) $(XSLICES) $(YSLICES) $(ZSLICES) $(OBJECTS) $(FRAMES) | tee -a $(RESULTSFILE)
 
-recorder_serial: recorder_serial.o World.o Object_mpi.o vec3.o
-	$(CPP) -o recorder_serial recorder_serial.o World.o Object_mpi.o vec3.o
+recorder_serial: recorder_serial.o Slice_serial.o Object.o vec3.o
+	$(CPP) -o recorder_serial recorder_serial.o Slice_serial.o Object.o vec3.o
 
 
 # make and run the MPI Player
@@ -57,7 +61,7 @@ play: player
 
 #  Delete unwanted files
 clean:
-	rm -f $(EX) *.o *.a
+	rm -f $(EXE) *.o *.a
 
 #  Create archive (include glWindowPos here if you need it)
 graphicslib.a: $(PLAYEROBJ) 

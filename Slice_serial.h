@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <time.h>
 #include <cmath>
-#include <mpi.h>
 
 #include "Object.h"
 
@@ -16,6 +15,8 @@
 #ifndef PI
 #define PI 3.14159265
 #endif
+
+class Slice_serial;
 
 struct Bounds {
     double nx; // negative x boundary
@@ -25,7 +26,7 @@ struct Bounds {
     double nz; // negative z boundary
     double pz; // positive z boundary
 };
-struct Neighbors {
+struct Neighbors_rank {
     // Holds the rank of the neighbor at each boundary.
     // Value of -1 indicates no neighbor on that boundary.
     int nx; // negative x neighbor
@@ -35,45 +36,59 @@ struct Neighbors {
     int nz; // negative z neighbor
     int pz; // positive z neighbor
 };
+struct Neighbors_pointer {
+    // Holds the rank of the neighbor at each boundary.
+    // Value of 0 indicates no neighbor on that boundary.
+    Slice_serial * nx; // negative x neighbor
+    Slice_serial * px; // positive x neighbor
+    Slice_serial * ny; // negative y neighbor
+    Slice_serial * py; // positive y neighbor
+    Slice_serial * nz; // negative z neighbor
+    Slice_serial * pz; // positive z neighbor
+};
 
-class Slice {
+
+class Slice_serial {
 public:
-    Slice(int r, int s, MPI_File * fh, double worldSize[3], unsigned sliceRows[3]);
-    ~Slice();
+    Slice_serial(unsigned r, unsigned s, std::ofstream * fh, double worldSize[3], unsigned sliceRows[3]);
+    ~Slice_serial();
     void setTotalObjects(unsigned n) {nTotalObjects = n;}
     /* File IO */
     void record_frame();
     void write_frame_header();
     /* World controls */
-    void createObjects(int n) {for (int i=0; i<n; i++) createObject();}
+    void createObjects(unsigned n) {for (unsigned i=0; i<n; i++) createObject();}
     void createObject();
     void advance_full_step();
     void advance_half_step();
     void exchange_ghost_objects();
     void exchange_objects();
     void detect_collisions();
+
+    void set_neighbors(std::vector<Slice_serial *> slices);
+    void clear_ghost_objects();
+    void addGhostObject(Object * obj) {ghostObjects.push_back(obj);}
+    void addObject(Object * obj) {objects.push_back(obj);}
 private:
-    int rank;
-    int nSlices;
+    unsigned rank;
+    unsigned nSlices;
     unsigned nTotalObjects; // count of all objects in the world
-    MPI_File * fileHandle;
+    std::ofstream * fileHandle;
     double overlapWidth;
     Bounds bounds;
     Bounds innerBounds;
-    Neighbors neighbors;
+    Neighbors_rank neighbors_rank;
+    Neighbors_pointer neighbors;
     std::vector<Object *> objects;
     std::vector<Object *> ghostObjects;
 
     /* object IDs */
     unsigned nextObjectID;
-    int minID;
-    int maxID; 
+    unsigned minID;
+    unsigned maxID; 
     unsigned nextFrameID;
 
     /* Private methods */
-    void store_object_state(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, Object * o);
-    void send_objects(std::vector<unsigned> * idBuffer, std::vector<double> * stateBuffer, unsigned targetRank, MPI_Request * requestList);
-    void receive_objects(unsigned sourceRank, std::vector<Object *> * objList);
 
     void detect_collisions_world_boundaries();
     void handle_collision(Object * obj1, Object * obj2);

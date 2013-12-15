@@ -1,18 +1,18 @@
-#include "Object_mpi.h"
+#include "Object.h"
 
 /******************************
- * Object_mpi
+ * Object
  *  Represents an object's state 
  *  and handles reading and writing the state to/from the recording.
  ******************************/
-Object_mpi::Object_mpi() {
+Object::Object() {
     radius = 1.0;
     rotationAngle = 0;
 }
-Object_mpi::~Object_mpi() {
+Object::~Object() {
 
 }
-void Object_mpi::advance_full_step() {
+void Object::advance_full_step() {
     /*
      * This method defines how the objects in the space change over time.
      * This implementation uses simple explicit Euler update.
@@ -28,7 +28,7 @@ void Object_mpi::advance_full_step() {
     //  -- not implemented
 
 }
-void Object_mpi::advance_half_step() {
+void Object::advance_half_step() {
     /*
      * This method defines how the objects in the space change over time.
      * This implementation uses simple expclict Euler update.
@@ -56,7 +56,7 @@ void Object_mpi::advance_half_step() {
      *  double              z of rotation vector
      *  double              angle of rotation
      *****************************************************/
-void Object_mpi::get_bytes(char * buf) {
+void Object::get_bytes(char * buf) {
     memcpy(&buf[0], &id, 4);
     memcpy(&buf[4],  &position.x, 8);
     memcpy(&buf[12], &position.y, 8);
